@@ -5,7 +5,7 @@
  */
 
 // Re-export Prisma enums for convenient usage throughout the app
-export type { Role, AppointmentStatus, AppointmentType } from "@/generated/prisma";
+export type { Role, AppointmentStatus, AppointmentType } from "@/generated/prisma/client";
 
 // =============================================
 // API / Server Action Response Types
