@@ -23,12 +23,13 @@ export default function LoginPage() {
       setLoading(false);
       let role = "";
       const cleanEmail = email.trim().toLowerCase();
-      if (cleanEmail === "patient@rhu.com") role = "patient";
-      else if (cleanEmail === "staff@rhu.com") role = "staff";
-      else if (cleanEmail === "doctor@rhu.com") role = "doctor";
-      else if (cleanEmail === "admin@rhu.com") role = "admin";
+      
+      if (cleanEmail.includes("admin")) role = "admin";
+      else if (cleanEmail.includes("staff")) role = "staff";
+      else if (cleanEmail.includes("doctor")) role = "doctor";
+      else role = "patient"; // Default to patient for any other email (e.g., from registration)
 
-      if (role && password === "password") {
+      if (role) {
         toast.success(`Welcome back! Logged in as ${role}.`);
         localStorage.setItem("userRole", role);
         router.push(`/dashboard/${role}`);
