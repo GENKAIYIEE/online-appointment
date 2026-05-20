@@ -12,6 +12,5 @@ export default defineConfig({
   datasource: {
     // Runtime queries go through Supabase connection pooler (Supavisor)
     url: process.env["DATABASE_URL"],
-    directUrl: process.env["DIRECT_URL"]
   },
 });
