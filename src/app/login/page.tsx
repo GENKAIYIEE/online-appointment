@@ -22,10 +22,11 @@ export default function LoginPage() {
     setTimeout(() => {
       setLoading(false);
       let role = "";
-      if (email === "patient@rhu.com") role = "patient";
-      else if (email === "staff@rhu.com") role = "staff";
-      else if (email === "doctor@rhu.com") role = "doctor";
-      else if (email === "admin@rhu.com") role = "admin";
+      const cleanEmail = email.trim().toLowerCase();
+      if (cleanEmail === "patient@rhu.com") role = "patient";
+      else if (cleanEmail === "staff@rhu.com") role = "staff";
+      else if (cleanEmail === "doctor@rhu.com") role = "doctor";
+      else if (cleanEmail === "admin@rhu.com") role = "admin";
 
       if (role && password === "password") {
         toast.success(`Welcome back! Logged in as ${role}.`);
