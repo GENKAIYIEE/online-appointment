@@ -11,7 +11,7 @@ export default defineConfig({
   },
   datasource: {
     // Runtime queries go through Supabase connection pooler (Supavisor)
-    url: process.env["DATABASE_URL"]!,
-    // directUrl is configured in prisma/schema.prisma (Prisma v7 defineConfig does not support it)
+    url: process.env["DATABASE_URL"],
+    directUrl: process.env["DIRECT_URL"]
   },
 });
