@@ -1,0 +1,83 @@
+// This is your Prisma schema file for the RHU Agoo Online Appointment System.
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// =============================================
+// ENUMS
+// =============================================
+
+enum Role {
+  PATIENT
+  ADMIN
+  STAFF
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum AppointmentType {
+  WALK_IN
+  ONLINE
+}
+
+// =============================================
+// MODELS
+// =============================================
+
+/// Represents a user of the system (patient, admin, or staff).
+model User {
+  id           String        @id @default(cuid())
+  role         Role          @default(PATIENT)
+  name         String
+  phone        String?       @unique
+  created_at   DateTime      @default(now())
+
+  appointments Appointment[]
+
+  @@map("users")
+}
+
+/// Represents a daily schedule slot managed by RHU staff.
+model Schedule {
+  id            String        @id @default(cuid())
+  date          DateTime      @unique @db.Date
+  max_capacity  Int           @default(30)
+  booked_count  Int           @default(0)
+  created_at    DateTime      @default(now())
+
+  appointments  Appointment[]
+
+  @@map("schedules")
+}
+
+/// Represents a patient appointment linked to a schedule slot.
+model Appointment {
+  id          String            @id @default(cuid())
+  status      AppointmentStatus @default(PENDING)
+  type        AppointmentType   @default(ONLINE)
+  created_at  DateTime          @default(now())
+
+  // Relations
+  user        User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user_id     String
+
+  schedule    Schedule          @relation(fields: [schedule_id], references: [id], onDelete: Cascade)
+  schedule_id String
+
+  @@map("appointments")
+}
