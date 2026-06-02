@@ -5,38 +5,35 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Stethoscope, User, Shield, ClipboardList, ArrowRight, HeartPulse } from "lucide-react";
+import { Stethoscope, User, Shield, ClipboardList, ArrowRight, HeartPulse, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
+import { loginUser } from "@/actions/auth";
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    // Mock Authentication
-    setTimeout(() => {
-      setLoading(false);
-      let role = "";
-      const cleanEmail = email.trim().toLowerCase();
-      
-      if (cleanEmail.includes("admin")) role = "admin";
-      else if (cleanEmail.includes("staff")) role = "staff";
-      else if (cleanEmail.includes("doctor")) role = "doctor";
-      else role = "patient"; // Default to patient for any other email (e.g., from registration)
+    try {
+      const res = await loginUser(email, password);
 
-      if (role) {
-        toast.success(`Welcome back! Logged in as ${role}.`);
-        localStorage.setItem("userRole", role);
-        router.push(`/dashboard/${role}`);
+      if (res.success && res.redirect) {
+        toast.success("Login successful! Redirecting...");
+        router.push(res.redirect);
       } else {
-        toast.error("Invalid credentials. Try using one of the quick login buttons.");
+        toast.error(res.error || "Invalid email or password. Please try again.");
+        setLoading(false);
       }
-    }, 800);
+    } catch (error) {
+      toast.error("An unexpected error occurred. Please try again later.");
+      setLoading(false);
+    }
   };
 
 
@@ -115,17 +112,32 @@ export default function LoginPage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="password" className="text-slate-700 font-bold text-sm">Password</Label>
-                  <a href="#" className="text-sm font-semibold text-green-600 hover:text-green-700 hover:underline transition-all">Forgot password?</a>
                 </div>
-                <Input 
-                  id="password" 
-                  type="password" 
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required 
-                  className="h-14 px-5 rounded-2xl border-slate-200 focus-visible:ring-4 focus-visible:ring-green-600/10 focus-visible:border-green-600 bg-slate-50/50 hover:bg-slate-50 transition-all duration-200 text-base font-medium tracking-widest"
-                />
+                <div className="relative">
+                  <Input 
+                    id="password" 
+                    type={showPassword ? "text" : "password"} 
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required 
+                    className={`h-14 pl-5 pr-12 rounded-2xl border-slate-200 focus-visible:ring-4 focus-visible:ring-green-600/10 focus-visible:border-green-600 bg-slate-50/50 hover:bg-slate-50 transition-all duration-200 text-base font-medium ${
+                      showPassword ? "" : "tracking-widest"
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none flex items-center justify-center"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-5 h-5" />
+                    ) : (
+                      <Eye className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               <Button 
@@ -140,7 +152,7 @@ export default function LoginPage() {
 
             <div className="mt-8 pt-6 border-t border-slate-100 text-center text-sm font-medium text-slate-600">
               Don't have an account?{" "}
-              <a href="/patient-registration.html" className="text-green-600 hover:text-green-700 hover:underline font-bold transition-all">
+              <a href="/register" className="text-green-600 hover:text-green-700 hover:underline font-bold transition-all">
                 Register here
               </a>
             </div>

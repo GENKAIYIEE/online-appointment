@@ -1,0 +1,254 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Search, Filter, CalendarDays, User, FileText, ChevronDown, ChevronUp } from "lucide-react";
+import { format } from "date-fns";
+import { formatDatePHT } from "@/lib/utils";
+
+export function HistoryClient({ history, services }: { history: any[]; services: any[] }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const [search, setSearch] = useState(searchParams.get("search") || "");
+  const [startDate, setStartDate] = useState(searchParams.get("startDate") || "");
+  const [endDate, setEndDate] = useState(searchParams.get("endDate") || "");
+  const [service, setService] = useState(searchParams.get("service") || "");
+  const [type, setType] = useState(searchParams.get("type") || "ALL");
+
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const handleApplyFilters = () => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+    if (service) params.set("service", service);
+    if (type && type !== "ALL") params.set("type", type);
+
+    router.push(`/dashboard/doctor/history?${params.toString()}`);
+  };
+
+  const handleClearFilters = () => {
+    setSearch(""); setStartDate(""); setEndDate(""); setService(""); setType("ALL");
+    router.push(`/dashboard/doctor/history`);
+  };
+
+  const getAge = (birthday?: Date | string | null) => {
+    if (!birthday) return "N/A";
+    const b = new Date(birthday);
+    const ageDifMs = Date.now() - b.getTime();
+    const ageDate = new Date(ageDifMs);
+    return Math.abs(ageDate.getUTCFullYear() - 1970);
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500 pb-12">
+      {/* HEADER */}
+      <div>
+        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 tracking-tight">
+          Consultation History
+        </h1>
+        <p className="text-slate-500 mt-1">
+          Review all your completed consultations.
+        </p>
+      </div>
+
+      {/* FILTERS */}
+      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Filter className="w-4 h-4 text-slate-500" />
+          <h3 className="font-semibold text-slate-700 text-sm">Filter History</h3>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+            <input 
+              type="text" 
+              placeholder="Search patient name..." 
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500" 
+            />
+          </div>
+          <div>
+            <input 
+              type="date" 
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500" 
+            />
+          </div>
+          <div>
+            <input 
+              type="date" 
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500" 
+            />
+          </div>
+          <div>
+            <select 
+              value={service}
+              onChange={e => setService(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 bg-white"
+            >
+              <option value="">All Services</option>
+              {services.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <select 
+              value={type}
+              onChange={e => setType(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 bg-white"
+            >
+              <option value="ALL">All Types</option>
+              <option value="ONLINE">Online</option>
+              <option value="WALK_IN">Walk-in</option>
+            </select>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 pt-2">
+          <button onClick={handleClearFilters} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors">
+            Clear Filters
+          </button>
+          <button onClick={handleApplyFilters} className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 transition-colors">
+            Apply Filters
+          </button>
+        </div>
+      </div>
+
+      {/* LIST */}
+      <div className="space-y-4">
+        {history.length === 0 ? (
+          <div className="bg-slate-50 border border-dashed border-slate-300 rounded-xl p-12 text-center text-slate-500">
+            <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+            <p>No consultation history found matching your filters.</p>
+          </div>
+        ) : (
+          history.map(item => {
+            const isWalkIn = item.type === "WALK_IN";
+            const patientName = isWalkIn ? item.walkInPatient?.fullName : item.user?.name;
+            const age = isWalkIn ? item.walkInPatient?.age : getAge(item.user?.birthday);
+            const isExpanded = expandedId === item.id;
+            const cons = item.consultation;
+
+            return (
+              <div key={item.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden transition-all">
+                {/* Header / Summary */}
+                <div 
+                  className={`p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 cursor-pointer hover:bg-slate-50 transition-colors ${isExpanded ? "bg-slate-50 border-b border-slate-100" : ""}`}
+                  onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-slate-100 text-slate-500 rounded-full flex items-center justify-center shrink-0">
+                      <User className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-lg">
+                        {patientName} <span className="text-sm font-normal text-slate-500">({age} yrs)</span>
+                      </h4>
+                      <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
+                        <span className="flex items-center gap-1.5"><CalendarDays className="w-4 h-4 text-slate-400" /> {formatDatePHT(item.created_at, "MMM d, yyyy")} • {item.time_slot}</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                          item.type === "ONLINE" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
+                        }`}>
+                          {item.type.replace("_", "-")}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col md:items-end w-full md:w-auto gap-2">
+                    <div className="text-sm">
+                      <span className="text-slate-500">Diagnosis:</span> <span className="font-medium text-slate-800">{cons?.diagnosis ? (cons.diagnosis.length > 30 ? cons.diagnosis.substring(0,30) + "..." : cons.diagnosis) : "N/A"}</span>
+                    </div>
+                    <button className="text-green-600 text-sm font-medium flex items-center gap-1 hover:text-green-700">
+                      {isExpanded ? <><ChevronUp className="w-4 h-4" /> Hide Details</> : <><ChevronDown className="w-4 h-4" /> View Details</>}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Expanded Details */}
+                {isExpanded && cons && (
+                  <div className="p-6 bg-white animate-in slide-in-from-top-2 duration-300">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      {/* Left: Vitals & Notes */}
+                      <div className="space-y-6">
+                        <div>
+                          <h5 className="font-semibold text-slate-800 mb-3 border-b border-slate-100 pb-2">Vital Signs</h5>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div><span className="text-slate-500 block">BP (mmHg)</span><span className="font-medium">{cons.vitalSigns?.bloodPressure || "—"}</span></div>
+                            <div><span className="text-slate-500 block">Temp (°C)</span><span className="font-medium">{cons.vitalSigns?.temperature || "—"}</span></div>
+                            <div><span className="text-slate-500 block">HR (bpm)</span><span className="font-medium">{cons.vitalSigns?.heartRate || "—"}</span></div>
+                            <div><span className="text-slate-500 block">Weight (kg)</span><span className="font-medium">{cons.vitalSigns?.weight || "—"}</span></div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <h5 className="font-semibold text-slate-800 mb-3 border-b border-slate-100 pb-2">Consultation Notes</h5>
+                          <div className="space-y-4 text-sm">
+                            <div>
+                              <span className="text-slate-500 block mb-1">Chief Complaint</span>
+                              <div className="p-3 bg-slate-50 rounded border border-slate-100 whitespace-pre-wrap">{cons.chiefComplaint}</div>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block mb-1">Diagnosis</span>
+                              <div className="p-3 bg-slate-50 rounded border border-slate-100 whitespace-pre-wrap font-medium">{cons.diagnosis}</div>
+                            </div>
+                            {cons.prescriptionNotes && (
+                              <div>
+                                <span className="text-slate-500 block mb-1">Prescription Notes</span>
+                                <div className="p-3 bg-slate-50 rounded border border-slate-100 whitespace-pre-wrap">{cons.prescriptionNotes}</div>
+                              </div>
+                            )}
+                            {cons.followUpDate && (
+                              <div>
+                                <span className="text-slate-500 block mb-1">Follow-up Date</span>
+                                <span className="font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded">{formatDatePHT(cons.followUpDate, "MMM d, yyyy")}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Patient Background */}
+                      <div>
+                        <h5 className="font-semibold text-slate-800 mb-3 border-b border-slate-100 pb-2">Patient Background</h5>
+                        {isWalkIn ? (
+                          <div className="text-sm space-y-2">
+                            <p className="text-slate-500 italic mb-4">Walk-in patient. Hard copy ITR is available in records.</p>
+                            <div><span className="text-slate-500 w-24 inline-block">Sex:</span> <span className="font-medium">{item.walkInPatient?.sex}</span></div>
+                            <div><span className="text-slate-500 w-24 inline-block">Contact:</span> <span className="font-medium">{item.walkInPatient?.contactNumber}</span></div>
+                            <div><span className="text-slate-500 w-24 inline-block">Address:</span> <span className="font-medium">{item.walkInPatient?.address}</span></div>
+                          </div>
+                        ) : (
+                          <div className="text-sm space-y-4">
+                            <div className="space-y-2">
+                              <div><span className="text-slate-500 w-24 inline-block">Sex:</span> <span className="font-medium">{item.user?.gender || "—"}</span></div>
+                              <div><span className="text-slate-500 w-24 inline-block">Contact:</span> <span className="font-medium">{item.user?.phone || "—"}</span></div>
+                            </div>
+                            {item.user?.itr ? (
+                              <div className="space-y-3 mt-4 border-t border-slate-100 pt-4">
+                                <div><span className="text-slate-500 block">Past Medical History</span> <span className="font-medium">{item.user.itr.pastMedicalOthers || "None"}</span></div>
+                                <div><span className="text-slate-500 block">Allergies</span> <span className="font-medium">{item.user.itr.allergiesSpec || "None"}</span></div>
+                                <div><span className="text-slate-500 block">Family History</span> <span className="font-medium">{item.user.itr.familyHistoryOthers || "None"}</span></div>
+                              </div>
+                            ) : (
+                              <p className="text-slate-500 italic mt-4 border-t border-slate-100 pt-4">No ITR completed yet.</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}

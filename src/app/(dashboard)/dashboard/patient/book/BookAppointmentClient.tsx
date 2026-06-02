@@ -1,0 +1,723 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  Smile,
+  FlaskConical,
+  Heart,
+  Users,
+  Activity,
+  Microscope,
+  CheckCircle2,
+  ChevronRight,
+  ChevronLeft,
+  CalendarDays,
+  Clock,
+  User,
+  Phone,
+  Calendar as CalendarIcon,
+  AlertCircle,
+  Loader2,
+} from "lucide-react";
+import { format, isBefore, startOfDay } from "date-fns";
+import { toast } from "sonner";
+
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardFooter,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { getBookedSlots, createAppointment, checkServiceAvailability } from "@/actions/book-appointment";
+import { cn } from "@/lib/utils";
+
+const DEFAULT_SERVICES_ICONS: Record<string, any> = {
+  "Dental Clinic": Smile,
+  "Drug Testing": FlaskConical,
+  "Family Planning": Heart,
+  "Adolescence Clinic": Users,
+  "Laboratory": Microscope,
+};
+
+/** All 18 time slots from 8:00 AM to 4:30 PM at 30-minute intervals */
+const ALL_SLOTS: string[] = [
+  "08:00 AM", "08:30 AM", "09:00 AM", "09:30 AM",
+  "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM",
+  "12:00 PM", "12:30 PM", "01:00 PM", "01:30 PM",
+  "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM",
+  "04:00 PM", "04:30 PM",
+];
+
+const ULTRASOUND_SLOTS: string[] = ["08:30 AM", "09:30 AM"];
+
+// ─── Calendar Disabled Logic ──────────────────────────────────────────────────
+
+/**
+ * Returns true if a calendar date should be disabled (not selectable).
+ * Rules:
+ *  - Only Monday–Thursday are allowed
+ *  - All past dates are disabled
+ *  - Today is disabled if current time is at or past 4:30 PM
+ */
+function isDateDisabled(date: Date, serviceName?: string): boolean {
+  const day = date.getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+
+  if (serviceName === "Ultrasound") {
+    if (day !== 4) return true; // Only Thursday
+  } else {
+    // Disable Friday, Saturday, Sunday
+    if (day === 0 || day === 5 || day === 6) return true;
+  }
+
+  // Disable all past dates (before today's midnight)
+  const today = startOfDay(new Date());
+  if (isBefore(date, today)) return true;
+
+  // Disable today if current time is >= 4:30 PM
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  if (isToday) {
+    const isPastCutoff =
+      now.getHours() > 16 ||
+      (now.getHours() === 16 && now.getMinutes() >= 30);
+    if (isPastCutoff) return true;
+  }
+
+  return false;
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export default function BookAppointmentClient({
+  patientInfo,
+  services,
+}: {
+  patientInfo: any;
+  services: { id: string; name: string }[];
+}) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const paramDateStr = searchParams.get("date");
+  const paramServiceStr = searchParams.get("service");
+
+  const parsedDate = paramDateStr ? new Date(`${paramDateStr}T00:00:00`) : undefined;
+  const initialDate = (parsedDate && !isNaN(parsedDate.getTime())) ? parsedDate : undefined;
+
+  // Step state
+  const [step, setStep] = useState((initialDate && paramServiceStr) ? 2 : 1);
+
+  // Form selections
+  const [selectedService, setSelectedService] = useState(paramServiceStr || "");
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(initialDate);
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState("");
+  const [notes, setNotes] = useState("");
+
+  // Slot data state
+  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  const [isFetchingSlots, setIsFetchingSlots] = useState(false);
+  const [slotFetchError, setSlotFetchError] = useState<string | null>(null);
+
+  // Submission state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCheckingService, setIsCheckingService] = useState(false);
+
+  // ── Fetch booked slots from DB whenever date or service changes ──────────────
+  const fetchBookedSlots = useCallback(async () => {
+    if (!selectedDate || !selectedService) return;
+
+    setIsFetchingSlots(true);
+    setSelectedTimeSlot(""); // reset selection on date change
+    setSlotFetchError(null);
+
+    try {
+      const result = await getBookedSlots(
+        format(selectedDate, "yyyy-MM-dd"),
+        selectedService
+      );
+      if (result.error) {
+        setSlotFetchError(result.error);
+        setBookedSlots([]);
+      } else {
+        setBookedSlots(result.bookedSlots);
+      }
+    } catch {
+      setSlotFetchError("Failed to load time slots. Please try again.");
+      setBookedSlots([]);
+    } finally {
+      setIsFetchingSlots(false);
+    }
+  }, [selectedDate, selectedService]);
+
+  useEffect(() => {
+    if (step === 2 && selectedDate && selectedService) {
+      fetchBookedSlots();
+    }
+  }, [selectedDate, selectedService, step, fetchBookedSlots]);
+
+  // ── Derived values ───────────────────────────────────────────────────────────
+  const selectedServiceObj = services.find((s) => s.id === selectedService);
+  const selectedServiceName = selectedServiceObj ? selectedServiceObj.name : selectedService;
+  
+  const currentSlots = selectedServiceName === "Ultrasound" ? ULTRASOUND_SLOTS : ALL_SLOTS;
+  const availableCount = currentSlots.length - bookedSlots.length;
+  const allSlotsTaken = availableCount === 0 && !isFetchingSlots && !slotFetchError && !!selectedDate;
+
+  // ── Handlers ─────────────────────────────────────────────────────────────────
+  const handleNext = async () => {
+    if (step === 1 && selectedService) {
+      setIsCheckingService(true);
+      try {
+        const isAvailable = await checkServiceAvailability(selectedServiceName);
+        if (!isAvailable) {
+          toast.error("This service is currently unavailable. Please try again later or contact the admin.");
+          setIsCheckingService(false);
+          return;
+        }
+      } catch (e) {
+        toast.error("Failed to check service availability.");
+        setIsCheckingService(false);
+        return;
+      }
+      setIsCheckingService(false);
+    }
+    if (step < 3) setStep(step + 1); 
+  };
+  const handleBack = () => { if (step > 1) setStep(step - 1); };
+
+  const handleDateSelect = (date: Date | undefined) => {
+    setSelectedDate(date);
+    setSelectedTimeSlot(""); // clear time on date change
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedDate || !selectedService || !selectedTimeSlot) return;
+
+    setIsSubmitting(true);
+    try {
+      const res = await createAppointment({
+        service: selectedService,
+        date: format(selectedDate, "yyyy-MM-dd"),
+        timeSlot: selectedTimeSlot,
+        notes: notes.trim() !== "" ? notes.trim() : undefined,
+      });
+
+      if (res.success) {
+        toast.success(
+          "Appointment booked successfully! You will be notified once confirmed."
+        );
+        router.push("/dashboard/patient/appointments");
+      } else {
+        toast.error(res.error || "Failed to book appointment. Please try again.");
+      }
+    } catch {
+      toast.error("An unexpected error occurred. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ── Slot count badge color ───────────────────────────────────────────────────
+  const slotCountColor =
+    availableCount === 0
+      ? "text-red-600"
+      : availableCount <= 5
+      ? "text-orange-500"
+      : "text-emerald-600";
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-8">
+      {/* Step Indicator */}
+      <div className="flex items-center justify-between mb-8 relative">
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-slate-100 -z-10 rounded-full" />
+        <div
+          className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-emerald-500 -z-10 rounded-full transition-all duration-300"
+          style={{ width: `${((step - 1) / 2) * 100}%` }}
+        />
+        {[1, 2, 3].map((s) => (
+          <div key={s} className="flex flex-col items-center gap-2 bg-white px-2">
+            <div
+              className={cn(
+                "w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-colors shadow-sm",
+                step === s
+                  ? "bg-emerald-600 text-white border-2 border-emerald-100"
+                  : step > s
+                  ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                  : "bg-slate-50 text-slate-400 border border-slate-200"
+              )}
+            >
+              {step > s ? <CheckCircle2 className="w-5 h-5" /> : s}
+            </div>
+            <span
+              className={cn(
+                "text-xs font-medium",
+                step >= s ? "text-slate-900" : "text-slate-400"
+              )}
+            >
+              {s === 1 ? "Select Service" : s === 2 ? "Date & Time" : "Confirm"}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* ── STEP 1: Select Service ──────────────────────────────────────────── */}
+      {step === 1 && (
+        <Card className="border-slate-200 shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <CardHeader>
+            <CardTitle>Select a Service</CardTitle>
+            <CardDescription>
+              Choose the type of consultation or service you need.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {services.map((service) => {
+                const Icon = DEFAULT_SERVICES_ICONS[service.name] || Activity;
+                const isSelected = selectedService === service.id;
+                return (
+                  <button
+                    key={service.id}
+                    onClick={() => setSelectedService(service.id)}
+                    className={cn(
+                      "flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all duration-200",
+                      isSelected
+                        ? "border-emerald-600 bg-emerald-50/50 shadow-sm scale-[1.02]"
+                        : "border-slate-100 hover:border-emerald-200 hover:bg-slate-50"
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "p-3 rounded-full",
+                        isSelected
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-slate-100 text-slate-600"
+                      )}
+                    >
+                      <Icon className="w-6 h-6" />
+                    </div>
+                    <span
+                      className={cn(
+                        "font-semibold text-sm text-center",
+                        isSelected ? "text-emerald-900" : "text-slate-700"
+                      )}
+                    >
+                      {service.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-end pt-4 border-t border-slate-100">
+            <Button
+              onClick={handleNext}
+              disabled={!selectedService || isCheckingService}
+              className="bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto"
+            >
+              {isCheckingService ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Checking...</>
+              ) : (
+                <>Continue to Date & Time <ChevronRight className="w-4 h-4 ml-1" /></>
+              )}
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
+
+      {/* ── STEP 2: Date & Time ─────────────────────────────────────────────── */}
+      {step === 2 && (
+        <Card className="border-slate-200 shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <CardHeader>
+            <CardTitle>Select Date & Time</CardTitle>
+            <CardDescription>
+              Choose when you would like to visit the clinic.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0 sm:p-6 sm:pt-0">
+            <div className="flex flex-col md:flex-row gap-0 md:gap-8 border-y sm:border sm:rounded-xl border-slate-100 bg-white sm:shadow-sm overflow-hidden">
+
+              {/* Left: Calendar */}
+              <div className="flex-1 p-6 border-b md:border-b-0 md:border-r border-slate-100 bg-slate-50/30">
+                <div className="flex items-center gap-2 mb-4 font-semibold text-slate-800">
+                  <CalendarDays className="w-5 h-5 text-emerald-600" />
+                  <h3>Pick a Date</h3>
+                </div>
+                <div className="bg-white rounded-lg border border-slate-200 p-2 shadow-sm inline-block">
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={handleDateSelect}
+                    disabled={(d) => isDateDisabled(d, selectedServiceName)}
+                    className="p-3"
+                    classNames={{
+                      selected:
+                        "bg-emerald-600 text-white hover:bg-emerald-600 hover:text-white focus:bg-emerald-600 focus:text-white",
+                      today: "bg-slate-100 text-slate-900",
+                      disabled: "text-slate-300 cursor-not-allowed opacity-50 line-through",
+                    }}
+                  />
+                </div>
+                {/* Clinic hours note */}
+                <div className="mt-4 flex flex-col gap-2">
+                  <div className="flex items-start gap-2 text-xs text-slate-500 bg-blue-50 border border-blue-100 rounded-lg p-3">
+                    <AlertCircle className="w-3.5 h-3.5 text-blue-400 mt-0.5 shrink-0" />
+                    <span>
+                      Clinic is open <strong>Monday to Thursday</strong>,{" "}
+                      <strong>8:00 AM to 5:00 PM</strong> only.
+                    </span>
+                  </div>
+                  {selectedServiceName === "Ultrasound" && (
+                    <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
+                      <span>
+                        <strong>Ultrasound</strong> is exclusively available on <strong>Thursdays</strong> at 8:30 AM and 9:30 AM.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right: Time Slots */}
+              <div className="flex-[1.2] p-6">
+                <div className="flex items-center gap-2 mb-1 font-semibold text-slate-800">
+                  <Clock className="w-5 h-5 text-emerald-600" />
+                  <h3>Available Time Slots</h3>
+                </div>
+
+                {/* No date selected prompt */}
+                {!selectedDate && (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 py-12 text-center">
+                    <CalendarIcon className="w-12 h-12 mb-3 opacity-20" />
+                    <p>
+                      Please select a date from the calendar
+                      <br />
+                      to view available time slots.
+                    </p>
+                  </div>
+                )}
+
+                {/* Loading skeleton */}
+                {selectedDate && isFetchingSlots && (
+                  <div className="pt-2">
+                    <div className="flex items-center gap-2 text-sm text-slate-400 mb-4">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading slots...
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      {Array.from({ length: 18 }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="h-14 bg-slate-100 rounded-lg animate-pulse"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Fetch error */}
+                {selectedDate && !isFetchingSlots && slotFetchError && (
+                  <div className="mt-4 flex flex-col items-center justify-center text-center py-10 bg-red-50 rounded-xl border border-red-100">
+                    <AlertCircle className="w-8 h-8 text-red-400 mb-2" />
+                    <p className="font-medium text-red-700">Could not load slots</p>
+                    <p className="text-sm text-red-500 mb-4">{slotFetchError}</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={fetchBookedSlots}
+                      className="border-red-200 text-red-600 hover:bg-red-50"
+                    >
+                      Try Again
+                    </Button>
+                  </div>
+                )}
+
+                {/* Slots grid */}
+                {selectedDate && !isFetchingSlots && !slotFetchError && (
+                  <>
+                    {/* Slot count indicator */}
+                    <p className={cn("text-sm font-semibold mb-4", slotCountColor)}>
+                      {availableCount === 0
+                        ? "No slots available"
+                        : `${availableCount} slot${availableCount !== 1 ? "s" : ""} available`}
+                    </p>
+
+                    {/* All slots taken message */}
+                    {allSlotsTaken ? (
+                      <div className="flex flex-col items-center justify-center text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                        <AlertCircle className="w-8 h-8 text-slate-400 mb-2" />
+                        <p className="font-medium text-slate-700">
+                          No available slots for this date.
+                        </p>
+                        <p className="text-sm text-slate-500">
+                          Please select another date.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-3">
+                        {currentSlots.map((slot) => {
+                          const isTaken = bookedSlots.includes(slot);
+                          const isSelected = selectedTimeSlot === slot;
+
+                          if (isTaken) {
+                            return (
+                              <div
+                                key={slot}
+                                className="flex flex-col items-center justify-center py-3 px-2 rounded-lg border text-center cursor-not-allowed select-none"
+                                style={{
+                                  backgroundColor: "#F3F4F6",
+                                  borderColor: "#E5E7EB",
+                                  color: "#9CA3AF",
+                                }}
+                              >
+                                <span className="text-sm font-medium">{slot}</span>
+                                <span className="text-[10px] mt-0.5 font-semibold uppercase tracking-wide text-slate-400">
+                                  Taken
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <button
+                              key={slot}
+                              onClick={() => setSelectedTimeSlot(slot)}
+                              className={cn(
+                                "flex flex-col items-center justify-center py-3 px-2 rounded-lg text-sm font-medium transition-all duration-150 border",
+                                isSelected
+                                  ? "text-white shadow-md shadow-emerald-600/20"
+                                  : "hover:text-white hover:shadow-md"
+                              )}
+                              style={
+                                isSelected
+                                  ? {
+                                      backgroundColor: "#16a34a",
+                                      borderColor: "#16a34a",
+                                      color: "white",
+                                    }
+                                  : {
+                                      backgroundColor: "white",
+                                      borderColor: "#16a34a",
+                                      color: "#16a34a",
+                                      borderWidth: "1.5px",
+                                    }
+                              }
+                              onMouseEnter={(e) => {
+                                if (!isSelected) {
+                                  const el = e.currentTarget;
+                                  el.style.backgroundColor = "#16a34a";
+                                  el.style.color = "white";
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isSelected) {
+                                  const el = e.currentTarget;
+                                  el.style.backgroundColor = "white";
+                                  el.style.color = "#16a34a";
+                                }
+                              }}
+                            >
+                              {slot}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter className="flex justify-between pt-6 border-t border-slate-100">
+            <Button
+              variant="outline"
+              onClick={handleBack}
+              className="text-slate-600"
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" /> Back
+            </Button>
+            <Button
+              onClick={handleNext}
+              disabled={!selectedDate || !selectedTimeSlot}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              Review & Confirm <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
+
+      {/* ── STEP 3: Confirm ─────────────────────────────────────────────────── */}
+      {step === 3 && (
+        <Card className="border-slate-200 shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-500 overflow-hidden">
+          <div className="h-2 bg-gradient-to-r from-emerald-400 to-emerald-600" />
+          <CardHeader className="bg-slate-50/50 pb-6 border-b border-slate-100">
+            <CardTitle className="text-2xl">Confirm Appointment</CardTitle>
+            <CardDescription>
+              Please review your details before submitting.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-6">
+            <div className="grid md:grid-cols-2 gap-8">
+
+              {/* Appointment Summary */}
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <CalendarDays className="w-4 h-4 text-emerald-600" />{" "}
+                    Appointment Details
+                  </h3>
+                  <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-5 space-y-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="text-xs font-medium text-emerald-800/70 mb-1">
+                          Service
+                        </p>
+                        <p className="font-semibold text-emerald-950 text-lg">
+                          {selectedService}
+                        </p>
+                      </div>
+                      <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-emerald-600">
+                        {(() => {
+                          const Icon =
+                            DEFAULT_SERVICES_ICONS[selectedServiceName] || Activity;
+                          return <Icon className="w-5 h-5" />;
+                        })()}
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-emerald-200/50" />
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs font-medium text-emerald-800/70 mb-1">
+                          Date
+                        </p>
+                        <p className="font-semibold text-emerald-950">
+                          {selectedDate
+                            ? format(selectedDate, "MMMM d, yyyy")
+                            : ""}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-emerald-800/70 mb-1">
+                          Time
+                        </p>
+                        <p className="font-semibold text-emerald-950">
+                          {selectedTimeSlot}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-slate-500" /> Notes
+                    (Optional)
+                  </h3>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    maxLength={300}
+                    placeholder="Describe your concern or reason for visit..."
+                    className="w-full min-h-[100px] p-3 text-sm rounded-lg border border-slate-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 resize-none transition-colors"
+                  />
+                  <p className="text-xs text-slate-400 mt-2 text-right">
+                    {notes.length}/300
+                  </p>
+                </div>
+              </div>
+
+              {/* Patient Info */}
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <User className="w-4 h-4 text-emerald-600" /> Patient
+                  Information
+                </h3>
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 space-y-4">
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 mb-1">
+                      Full Name
+                    </p>
+                    <p className="font-semibold text-slate-900">
+                      {patientInfo.name}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 mb-1">
+                      Phone Number
+                    </p>
+                    <p className="font-medium text-slate-700 flex items-center gap-2">
+                      <Phone className="w-3.5 h-3.5 text-slate-400" />{" "}
+                      {patientInfo.phone}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-200/60 mt-2">
+                    <div>
+                      <p className="text-xs font-medium text-slate-500 mb-1">
+                        Date of Birth
+                      </p>
+                      <p className="font-medium text-slate-700">
+                        {patientInfo.dob}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-slate-500 mb-1">
+                        Gender
+                      </p>
+                      <p className="font-medium text-slate-700">
+                        {patientInfo.gender}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-xs mt-4 leading-relaxed bg-blue-50 text-blue-800 p-3 rounded-lg border border-blue-100">
+                  <strong className="font-semibold">Note:</strong> Make sure
+                  your details are correct. To update your profile information,
+                  please contact the front desk during your visit.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter className="flex flex-col sm:flex-row gap-3 justify-between p-6 bg-slate-50/50 border-t border-slate-100">
+            <Button
+              variant="outline"
+              onClick={handleBack}
+              disabled={isSubmitting}
+              className="w-full sm:w-auto text-slate-600 bg-white"
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" /> Back to Date & Time
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/20 h-11 px-8 text-base font-semibold"
+            >
+              {isSubmitting ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Submitting...
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5" />
+                  Confirm Appointment
+                </span>
+              )}
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
+    </div>
+  );
+}
