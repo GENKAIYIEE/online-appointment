@@ -39,7 +39,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Doctor must be assigned to a service" }, { status: 400 });
     }
 
-    const newUser = await createStaffOrDoctor(data);
+    const newUser = await createStaffOrDoctor({
+      ...data,
+      forceReassign: data.forceReassign
+    });
 
     // Log the administrative action with the actual admin's identity
     await logAction("CREATE_USER", "USER", newUser.id, {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Users, Clock, CheckCircle, Stethoscope, FileText, Activity, CalendarDays } from "lucide-react";
+import { Users, Clock, CheckCircle, Stethoscope, FileText, CalendarDays } from "lucide-react";
 import { toggleAvailability, getDoctorQueue, getDoctorSummaryCards, markAsServing, markAsNoShow } from "@/actions/doctor";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -50,7 +50,7 @@ export function DoctorConsoleClient({
   const [summary, setSummary] = useState<Summary>(initialSummary);
   const [todayQueue, setTodayQueue] = useState<QueueItem[]>(initialTodayQueue);
   const [upcomingQueue, setUpcomingQueue] = useState<QueueItem[]>(initialUpcomingQueue);
-  const [quickActionModal, setQuickActionModal] = useState<"lab" | "prescript" | "medcert" | null>(null);
+
   const [noShowAppt, setNoShowAppt] = useState<QueueItem | null>(null);
   const [isMarkingNoShow, setIsMarkingNoShow] = useState(false);
 
@@ -196,6 +196,10 @@ export function DoctorConsoleClient({
             <div className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide text-center border border-red-200">
               No Show
             </div>
+          ) : showDate ? (
+            <div className="bg-blue-50 border border-blue-100 text-blue-600 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wide text-center">
+              Upcoming
+            </div>
           ) : (
             <>
               <div className="bg-amber-100 text-amber-700 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wide text-center hidden sm:block">
@@ -210,7 +214,7 @@ export function DoctorConsoleClient({
             </>
           )}
 
-          {!isNoShow && (
+          {!isNoShow && !showDate && (
             <button
               onClick={() => handleOpenFile(patient.id)}
               className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2 flex-1 sm:flex-none ${
@@ -351,40 +355,8 @@ export function DoctorConsoleClient({
           )}
         </div>
 
-        {/* QUICK ACTIONS */}
+        {/* SIDEBAR WIDGETS */}
         <div className="xl:col-span-1 space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="border-b border-slate-100 bg-slate-50/50 p-4">
-              <h3 className="font-semibold text-slate-800">Quick Actions</h3>
-            </div>
-            <div className="p-4 flex flex-col gap-3">
-              <button
-                onClick={() => toast.info("Lab Test Requests — Coming Soon")}
-                className="w-full bg-white border border-slate-200 hover:border-green-500 hover:bg-green-50 text-slate-700 font-medium py-3 px-4 rounded-lg text-sm transition-all flex items-center gap-3 text-left"
-              >
-                <Activity className="w-5 h-5 text-green-600" />
-                Request Lab Test
-                <span className="ml-auto text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">Soon</span>
-              </button>
-              <button
-                onClick={() => toast.info("E-Prescription — Coming Soon")}
-                className="w-full bg-white border border-slate-200 hover:border-green-500 hover:bg-green-50 text-slate-700 font-medium py-3 px-4 rounded-lg text-sm transition-all flex items-center gap-3 text-left"
-              >
-                <FileText className="w-5 h-5 text-green-600" />
-                E-Prescription
-                <span className="ml-auto text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">Soon</span>
-              </button>
-              <button
-                onClick={() => toast.info("Medical Certificate — Coming Soon")}
-                className="w-full bg-white border border-slate-200 hover:border-green-500 hover:bg-green-50 text-slate-700 font-medium py-3 px-4 rounded-lg text-sm transition-all flex items-center gap-3 text-left"
-              >
-                <FileText className="w-5 h-5 text-green-600" />
-                Medical Certificate
-                <span className="ml-auto text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">Soon</span>
-              </button>
-            </div>
-          </div>
-
           {/* Upcoming count mini-card */}
           {upcomingQueue.length > 0 && (
             <div className="bg-blue-50 rounded-xl border border-blue-200 p-4">

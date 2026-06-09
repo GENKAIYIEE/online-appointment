@@ -19,6 +19,7 @@ export async function createStaffOrDoctor(data: {
   phone: string | null;
   role: 'STAFF' | 'DOCTOR';
   assignedServiceId?: string;
+  forceReassign?: boolean;
 }) {
   const existing = await prisma.user.findUnique({
     where: { email: data.email.toLowerCase() },
@@ -41,6 +42,13 @@ export async function createStaffOrDoctor(data: {
     });
 
     if (data.role === 'DOCTOR' && data.assignedServiceId) {
+      const service = await tx.service.findUnique({
+        where: { id: data.assignedServiceId }
+      });
+      if (service && service.assigned_doctor_id && !data.forceReassign) {
+        throw new Error('SERVICE_ALREADY_ASSIGNED');
+      }
+
       await tx.service.update({
         where: { id: data.assignedServiceId },
         data: {
@@ -61,6 +69,7 @@ export async function updateStaffOrDoctor(
     phone?: string | null;
     assignedServiceId?: string | null;
     password?: string;
+    forceReassign?: boolean;
   }
 ) {
   const passwordHash = data.password ? await bcrypt.hash(data.password, 10) : undefined;
@@ -82,10 +91,13 @@ export async function updateStaffOrDoctor(
     });
 
     if (user.role === 'DOCTOR') {
-      // First disconnect from old service if exists
-      if (user.assignedService) {
+      const oldServiceId = user.assignedService?.id;
+      const newServiceId = data.assignedServiceId;
+
+      // Disconnect from old service if changing
+      if (oldServiceId && oldServiceId !== newServiceId) {
         await tx.service.update({
-          where: { id: user.assignedService.id },
+          where: { id: oldServiceId },
           data: {
             assigned_doctor_id: null,
             doctor_name: 'Unassigned',
@@ -94,13 +106,26 @@ export async function updateStaffOrDoctor(
       }
 
       // Connect to new service if assigned
-      if (data.assignedServiceId) {
+      if (newServiceId && newServiceId !== oldServiceId) {
+        const service = await tx.service.findUnique({
+          where: { id: newServiceId }
+        });
+        if (service && service.assigned_doctor_id && !data.forceReassign) {
+          throw new Error('SERVICE_ALREADY_ASSIGNED');
+        }
+
         await tx.service.update({
-          where: { id: data.assignedServiceId },
+          where: { id: newServiceId },
           data: {
             assigned_doctor_id: user.id,
             doctor_name: updatedUser.name,
           },
+        });
+      } else if (newServiceId && newServiceId === oldServiceId) {
+        // Same service, just update doctor_name in case the doctor's name was edited
+        await tx.service.update({
+          where: { id: newServiceId },
+          data: { doctor_name: updatedUser.name },
         });
       }
     }
@@ -110,8 +135,25 @@ export async function updateStaffOrDoctor(
 }
 
 export async function deleteUser(id: string) {
-  return await prisma.user.delete({
-    where: { id },
+  return await prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({
+      where: { id },
+      include: { assignedService: true },
+    });
+
+    if (user?.role === 'DOCTOR' && user.assignedService) {
+      await tx.service.update({
+        where: { id: user.assignedService.id },
+        data: {
+          assigned_doctor_id: null,
+          doctor_name: 'Unassigned',
+        },
+      });
+    }
+
+    return await tx.user.delete({
+      where: { id },
+    });
   });
 }
 

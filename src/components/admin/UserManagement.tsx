@@ -88,6 +88,7 @@ export function UserManagement() {
   const [editUser, setEditUser] = useState<UserRecord | null>(null);
   const [deleteUser, setDeleteUser] = useState<UserRecord | null>(null);
   const [confirmOverrideServiceId, setConfirmOverrideServiceId] = useState<string | null>(null);
+  const [overrideMode, setOverrideMode] = useState<"CREATE" | "UPDATE" | null>(null);
 
   const [editPassword, setEditPassword] = useState("");
   const [editConfirmPassword, setEditConfirmPassword] = useState("");
@@ -142,9 +143,10 @@ export function UserManagement() {
   };
 
   // ── Create user ──────────────────────────────────────────────────────────
-  const doCreate = async () => {
+  const doCreate = async (forceReassign = false) => {
     setCreating(true);
     setConfirmOverrideServiceId(null);
+    setOverrideMode(null);
     try {
       const res = await fetch("/api/admin/users", {
         method: "POST",
@@ -155,7 +157,8 @@ export function UserManagement() {
           password: password,
           phone: phone.trim() || null, 
           role,
-          assignedServiceId: role === "DOCTOR" ? assignedServiceId : undefined
+          assignedServiceId: role === "DOCTOR" ? assignedServiceId : undefined,
+          forceReassign
         }),
       });
       if (res.ok) {
@@ -196,21 +199,37 @@ export function UserManagement() {
       const existingAssignment = serviceDoctorMap[assignedServiceId];
       if (existingAssignment) {
         setConfirmOverrideServiceId(assignedServiceId);
+        setOverrideMode("CREATE");
         return;
       }
     }
 
-    doCreate();
+    doCreate(false);
   };
 
   // ── Update user ──────────────────────────────────────────────────────────
-  const handleUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleUpdate = async (e?: React.FormEvent, forceReassign = false) => {
+    if (e) e.preventDefault();
     if (!editUser) return;
     
     if (editUser.role === "DOCTOR" && !editUser.assignedService?.id) {
       toast.error("Please assign a service for this doctor.");
       return;
+    }
+
+    if (!forceReassign && editUser.role === "DOCTOR" && editUser.assignedService?.id) {
+      const newSvcId = editUser.assignedService.id;
+      const originalUser = users.find(u => u.id === editUser.id);
+      const oldSvcId = originalUser?.assignedService?.id;
+      
+      if (newSvcId !== oldSvcId) {
+        const existingAssignment = serviceDoctorMap[newSvcId];
+        if (existingAssignment && existingAssignment.doctorId !== editUser.id) {
+          setConfirmOverrideServiceId(newSvcId);
+          setOverrideMode("UPDATE");
+          return;
+        }
+      }
     }
 
     if (editPassword || editConfirmPassword) {
@@ -229,11 +248,14 @@ export function UserManagement() {
     }
 
     setIsUpdating(true);
+    setConfirmOverrideServiceId(null);
+    setOverrideMode(null);
     try {
       const payload: any = {
         name: editUser.name.trim(),
         phone: editUser.phone?.trim() || null,
-        assignedServiceId: editUser.role === "DOCTOR" ? editUser.assignedService?.id : undefined
+        assignedServiceId: editUser.role === "DOCTOR" ? editUser.assignedService?.id : undefined,
+        forceReassign
       };
       
       if (editPassword) {
@@ -527,7 +549,12 @@ export function UserManagement() {
       </Card>
 
       {/* ── Override Warning Modal ──────────────────────────────────────── */}
-      <Dialog open={!!confirmOverrideServiceId} onOpenChange={(o) => !o && setConfirmOverrideServiceId(null)}>
+      <Dialog open={!!confirmOverrideServiceId} onOpenChange={(o) => {
+        if (!o) {
+          setConfirmOverrideServiceId(null);
+          setOverrideMode(null);
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reassign Service?</DialogTitle>
@@ -538,10 +565,17 @@ export function UserManagement() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOverrideServiceId(null)}>Cancel</Button>
-            <Button onClick={doCreate} disabled={creating} className="bg-[#16a34a] hover:bg-green-700">
-              {creating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              Confirm
+            <Button variant="outline" onClick={() => {
+              setConfirmOverrideServiceId(null);
+              setOverrideMode(null);
+            }}>Cancel</Button>
+            <Button 
+              onClick={() => overrideMode === "CREATE" ? doCreate(true) : handleUpdate(undefined, true)} 
+              disabled={creating || isUpdating} 
+              className="bg-[#16a34a] hover:bg-green-700"
+            >
+              {(creating || isUpdating) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Confirm Reassignment
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -579,11 +613,18 @@ export function UserManagement() {
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {services.map(s => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
+                      {services.map(s => {
+                        const existingAssigned = serviceDoctorMap[s.id];
+                        // Don't show "Assigned to [This Doctor]" in their own dropdown, just show it if assigned to someone else
+                        const assignedText = existingAssigned && existingAssigned.doctorId !== editUser.id 
+                          ? ` (Assigned: ${existingAssigned.doctorName})` 
+                          : "";
+                        return (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.name}{assignedText}
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                 </div>

@@ -32,18 +32,7 @@ async function main() {
     },
   });
 
-  // 3. Doctor Account
-  await prisma.user.upsert({
-    where: { email: 'doctor@gmail.com' },
-    update: {},
-    create: {
-      name: 'Doctor Account',
-      email: 'doctor@gmail.com',
-      password: passwordHash,
-      role: Role.DOCTOR,
-      isAvailable: true,
-    },
-  });
+
 
   console.log('Seeding completed successfully!');
 }

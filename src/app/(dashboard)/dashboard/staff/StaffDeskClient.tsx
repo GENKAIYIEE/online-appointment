@@ -136,6 +136,7 @@ export function StaffDeskClient({
   const [showSlipModal, setShowSlipModal] = useState(false);
   const [slipData, setSlipData] = useState<SlipData | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   const selectedService = services.find((s) => s.id === serviceId);
 
@@ -270,8 +271,49 @@ export function StaffDeskClient({
     setShowSlipModal(true);
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    const element = document.getElementById("print-slip");
+    if (!element) return;
+    
+    try {
+      setIsGeneratingPDF(true);
+      const htmlToImage = await import("html-to-image");
+      const { jsPDF } = await import("jspdf");
+      
+      // html-to-image properly renders modern CSS like lab() and oklch()
+      const imgData = await htmlToImage.toPng(element, { 
+        quality: 1.0,
+        pixelRatio: 2,
+      });
+      
+      const img = new Image();
+      img.src = imgData;
+      await new Promise((resolve) => {
+        img.onload = resolve;
+      });
+      
+      // Calculate dimensions in mm assuming standard 96 DPI screen
+      const pxToMm = 25.4 / 96;
+      const pdfWidth = img.width * pxToMm;
+      const pdfHeight = img.height * pxToMm;
+      
+      const pdf = new jsPDF({
+        orientation: pdfWidth > pdfHeight ? "landscape" : "portrait",
+        unit: "mm",
+        format: [pdfWidth, pdfHeight]
+      });
+      
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      
+      // Auto-download the PDF
+      pdf.save(`Appointment_Slip_${slipData?.fullName?.replace(/\s+/g, '_') || 'Patient'}.pdf`);
+      toast.success("Appointment slip downloaded successfully!");
+    } catch (error) {
+      console.error("Failed to generate PDF:", error);
+      toast.error("Failed to generate PDF slip.");
+    } finally {
+      setIsGeneratingPDF(false);
+    }
   };
 
   const todayString = new Date().toISOString().split("T")[0];
@@ -679,8 +721,21 @@ export function StaffDeskClient({
               <button onClick={() => setShowSlipModal(false)} className="flex-1 py-2.5 border border-slate-200 rounded-lg text-slate-700 font-medium text-sm hover:bg-slate-50 transition-colors">
                 Close
               </button>
-              <button onClick={handlePrint} className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-colors">
-                <Printer className="w-4 h-4" /> Print Slip
+              <button 
+                onClick={handlePrint} 
+                disabled={isGeneratingPDF}
+                className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {isGeneratingPDF ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Printer className="w-4 h-4" /> Print Slip
+                  </>
+                )}
               </button>
             </div>
           </div>

@@ -13,7 +13,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const { id } = await params;
     const data = await req.json();
 
-    const updatedUser = await updateStaffOrDoctor(id, data);
+    const updatedUser = await updateStaffOrDoctor(id, {
+      ...data,
+      forceReassign: data.forceReassign
+    });
 
     await logAction("UPDATE_USER", "USER", updatedUser.id, {
       role: updatedUser.role,
