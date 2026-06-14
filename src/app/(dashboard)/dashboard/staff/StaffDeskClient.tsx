@@ -1,19 +1,22 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { format, differenceInYears, isBefore, startOfDay } from "date-fns";
-import { Users, User, CalendarCheck, CheckCircle2, Printer, X, AlertTriangle, Info } from "lucide-react";
-import { registerWalkIn, getStaffSummaryCards, getTodayWalkIns } from "@/actions/staff";
+import { Users, User, CheckCircle2, Printer, X, AlertTriangle, Info, CalendarClock, CalendarIcon } from "lucide-react";
+import { registerWalkIn, getStaffSummaryCards, getTodayWalkIns, getUpcomingOnlineAppointments, staffCancelAppointment, staffRescheduleAppointment, type UpcomingOnlineAppointment } from "@/actions/staff";
 import { getBookedSlots } from "@/actions/book-appointment";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn, formatDatePHT } from "@/lib/utils";
 
 type Summary = {
   totalWalkIns: number;
   maleCount: number;
   femaleCount: number;
-  slotsRemaining: number;
 };
 
 type WalkIn = {
@@ -44,17 +47,6 @@ type SlipData = {
   timeSlot: string;
   doctor: string;
 };
-
-/** All 18 time slots from 8:00 AM to 4:30 PM at 30-minute intervals */
-const ALL_SLOTS: string[] = [
-  "08:00 AM", "08:30 AM", "09:00 AM", "09:30 AM",
-  "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM",
-  "12:00 PM", "12:30 PM", "01:00 PM", "01:30 PM",
-  "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM",
-  "04:00 PM", "04:30 PM",
-];
-
-const ULTRASOUND_SLOTS: string[] = ["08:30 AM", "09:30 AM"];
 
 // Helper to validate date selection for <input type="date">
 // Note: <input type="date"> returns YYYY-MM-DD strings. We parse them as local dates
@@ -106,13 +98,38 @@ export function StaffDeskClient({
   initialSummary,
   initialWalkIns,
   services,
+  clinicConfig,
+  initialUpcomingAppointments,
 }: {
   initialSummary: Summary;
-  initialWalkIns: WalkIn[];
+  initialWalkIns: { data: WalkIn[]; totalPages: number; currentPage: number };
   services: Service[];
+  clinicConfig: { allSlots: string[]; ultrasoundSlots: string[] };
+  initialUpcomingAppointments: { data: UpcomingOnlineAppointment[]; totalPages: number; currentPage: number };
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [summary, setSummary] = useState(initialSummary);
-  const [walkIns, setWalkIns] = useState(initialWalkIns);
+  const [walkIns, setWalkIns] = useState(initialWalkIns.data);
+  const [upcomingAppointments, setUpcomingAppointments] = useState<UpcomingOnlineAppointment[]>(initialUpcomingAppointments.data);
+
+  useEffect(() => { setWalkIns(initialWalkIns.data); }, [initialWalkIns]);
+  useEffect(() => { setUpcomingAppointments(initialUpcomingAppointments.data); }, [initialUpcomingAppointments]);
+
+  const handleTodayPageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > initialWalkIns.totalPages) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("todayPage", newPage.toString());
+    router.push(`/dashboard/staff?${params.toString()}`, { scroll: false });
+  };
+
+  const handleUpcomingPageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > initialUpcomingAppointments.totalPages) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("upcomingPage", newPage.toString());
+    router.push(`/dashboard/staff?${params.toString()}`, { scroll: false });
+  };
 
   // Form fields
   const [fullName, setFullName] = useState("");
@@ -137,6 +154,18 @@ export function StaffDeskClient({
   const [slipData, setSlipData] = useState<SlipData | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  // Manage modal state
+  const [manageTarget, setManageTarget] = useState<UpcomingOnlineAppointment | null>(null);
+  const [manageView, setManageView] = useState<"options" | "reschedule" | "cancel">("options");
+  const [manageLoading, setManageLoading] = useState(false);
+  // Reschedule form fields
+  const [mgServiceId, setMgServiceId] = useState("");
+  const [mgDate, setMgDate] = useState("");
+  const [mgTimeSlot, setMgTimeSlot] = useState("");
+  const [mgBookedSlots, setMgBookedSlots] = useState<string[]>([]);
+  const [mgIsFetchingSlots, setMgIsFetchingSlots] = useState(false);
+  const [mgSlotError, setMgSlotError] = useState<string | null>(null);
 
   const selectedService = services.find((s) => s.id === serviceId);
 
@@ -184,14 +213,90 @@ export function StaffDeskClient({
     }
   }, [services]);
 
-  const refreshData = useCallback(async () => {
-    const [newSummary, newWalkIns] = await Promise.all([
-      getStaffSummaryCards(),
-      getTodayWalkIns(),
-    ]);
-    setSummary(newSummary);
-    setWalkIns(newWalkIns);
+  const refreshData = useCallback(async (isBackground = false) => {
+    try {
+      const [newSummary, newWalkIns, newUpcoming] = await Promise.all([
+        getStaffSummaryCards(),
+        getTodayWalkIns(),
+        getUpcomingOnlineAppointments(),
+      ]);
+      setSummary(newSummary);
+      setWalkIns(newWalkIns.data);
+      setUpcomingAppointments(newUpcoming.data);
+    } catch {
+      if (!isBackground) toast.error("Failed to refresh data");
+    }
   }, []);
+
+  const openManageModal = (appt: UpcomingOnlineAppointment) => {
+    setManageTarget(appt);
+    setManageView("options");
+    setMgServiceId("");
+    setMgDate("");
+    setMgTimeSlot("");
+    setMgBookedSlots([]);
+    setMgSlotError(null);
+  };
+
+  const closeManageModal = () => setManageTarget(null);
+
+  const fetchMgSlots = useCallback(async (d: string, sid: string) => {
+    if (!d || !sid) { setMgBookedSlots([]); setMgTimeSlot(""); return; }
+    const svc = services.find(s => s.id === sid);
+    if (!svc) return;
+    setMgIsFetchingSlots(true);
+    setMgSlotError(null);
+    setMgTimeSlot("");
+    try {
+      const result = await getBookedSlots(d, svc.name);
+      if (result.error) { setMgSlotError(result.error); setMgBookedSlots([]); }
+      else setMgBookedSlots(result.bookedSlots);
+    } catch { setMgSlotError("Failed to fetch slots"); setMgBookedSlots([]); }
+    finally { setMgIsFetchingSlots(false); }
+  }, [services]);
+
+  const handleStaffCancel = async () => {
+    if (!manageTarget) return;
+    setManageLoading(true);
+    const result = await staffCancelAppointment(manageTarget.id);
+    setManageLoading(false);
+    if (result.success) {
+      toast.success("Appointment cancelled successfully.");
+      closeManageModal();
+      await refreshData();
+    } else {
+      toast.error(result.error || "Failed to cancel appointment.");
+    }
+  };
+
+  const handleStaffReschedule = async () => {
+    if (!manageTarget || !mgServiceId || !mgDate || !mgTimeSlot) {
+      toast.error("Please fill in all reschedule fields.");
+      return;
+    }
+    setManageLoading(true);
+    const result = await staffRescheduleAppointment({
+      appointmentId: manageTarget.id,
+      newServiceId: mgServiceId,
+      newDateString: mgDate,
+      newTimeSlot: mgTimeSlot,
+    });
+    setManageLoading(false);
+    if (result.success) {
+      toast.success("Appointment rescheduled successfully.");
+      closeManageModal();
+      await refreshData();
+    } else {
+      toast.error(result.error || "Failed to reschedule appointment.");
+    }
+  };
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshData(true);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [refreshData]);
 
   const resetForm = () => {
     setFullName(""); setBirthday(""); setAge(""); setSex("");
@@ -326,7 +431,7 @@ export function StaffDeskClient({
     }`;
 
   // Slot calculations
-  const currentSlots = selectedService?.name === "Ultrasound" ? ULTRASOUND_SLOTS : ALL_SLOTS;
+  const currentSlots = selectedService?.name === "Ultrasound" ? clinicConfig.ultrasoundSlots : clinicConfig.allSlots;
   const availableCount = currentSlots.length - bookedSlots.length;
   const slotCountColor =
     availableCount === 0
@@ -350,6 +455,16 @@ export function StaffDeskClient({
 
       {/* SECTION 1: SUMMARY CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm flex items-center gap-4">
+          <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center shrink-0">
+            <CalendarClock className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="text-sm font-medium text-slate-500">Upcoming Appointments</div>
+            <div className="text-2xl font-bold text-slate-900">{upcomingAppointments.length}</div>
+          </div>
+        </div>
+
         <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm flex items-center gap-4">
           <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center shrink-0">
             <Users className="w-6 h-6" />
@@ -377,22 +492,6 @@ export function StaffDeskClient({
           <div>
             <div className="text-sm font-medium text-slate-500">Female Patients</div>
             <div className="text-2xl font-bold text-slate-900">{summary.femaleCount}</div>
-          </div>
-        </div>
-
-        <div className={`rounded-xl p-6 border shadow-sm flex items-center gap-4 ${
-          summary.slotsRemaining === 0 ? "bg-red-50 border-red-200" : "bg-white border-slate-200"
-        }`}>
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${
-            summary.slotsRemaining === 0 ? "bg-red-100 text-red-600" : "bg-emerald-50 text-emerald-600"
-          }`}>
-            <CalendarCheck className="w-6 h-6" />
-          </div>
-          <div>
-            <div className={`text-sm font-medium ${summary.slotsRemaining === 0 ? "text-red-700" : "text-slate-500"}`}>
-              Slots Remaining Today
-            </div>
-            <div className="text-2xl font-bold">{summary.slotsRemaining}</div>
           </div>
         </div>
       </div>
@@ -484,31 +583,50 @@ export function StaffDeskClient({
               {/* Date */}
               <div className="space-y-1">
                 <label className="text-sm font-medium text-slate-700">Select Date <span className="text-red-500">*</span></label>
-                <input
-                  type="date"
-                  min={todayString}
-                  value={date}
-                  onChange={(e) => {
-                    const newDate = e.target.value;
-                    if (!newDate) {
-                      setDate("");
-                      setTimeSlot("");
-                      setBookedSlots([]);
-                      return;
-                    }
-                    
-                    const validation = validateSelectedDate(newDate, selectedService?.name);
-                    if (!validation.isValid) {
-                      toast.error(validation.error);
-                      return;
-                    }
-
-                    setDate(newDate);
-                    if (serviceId) fetchBookedSlots(newDate, serviceId);
-                  }}
-                  disabled={!serviceId}
-                  className={inputCls("date")}
-                />
+                <Popover>
+                  <PopoverTrigger
+                    disabled={!serviceId}
+                    className={cn(
+                      "flex h-10 w-full items-center justify-start rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-normal transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-green-500 disabled:cursor-not-allowed disabled:opacity-50",
+                      !date && "text-slate-500",
+                      errors.date && "border-red-400 focus-visible:ring-red-500 text-red-900"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {date ? format(new Date(date), "MMMM d, yyyy") : <span>Pick a date</span>}
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={date ? new Date(date) : undefined}
+                      onSelect={(d) => {
+                        if (!d) {
+                          setDate("");
+                          setTimeSlot("");
+                          setBookedSlots([]);
+                          return;
+                        }
+                        const dateStr = format(d, "yyyy-MM-dd");
+                        const validation = validateSelectedDate(dateStr, selectedService?.name);
+                        if (!validation.isValid) {
+                          toast.error(validation.error);
+                          return;
+                        }
+                        setDate(dateStr);
+                        if (serviceId) fetchBookedSlots(dateStr, serviceId);
+                      }}
+                      disabled={(d) => {
+                        const day = d.getDay();
+                        const isPast = startOfDay(d) < startOfDay(new Date());
+                        if (isPast) return true;
+                        if (selectedService?.name === "Ultrasound") {
+                          return day !== 4; // Only Thursday
+                        }
+                        return day === 0 || day === 5 || day === 6; // Mon-Thu only
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
                 {errors.date && <p className="text-xs text-red-500">{errors.date}</p>}
                 <p className="text-[11px] text-slate-500 mt-1 flex items-start gap-1">
                   <Info className="w-3.5 h-3.5 shrink-0" /> Clinic is open Monday to Thursday, 8:00 AM to 5:00 PM only.
@@ -640,9 +758,297 @@ export function StaffDeskClient({
                 </tbody>
               </table>
             </div>
+            {/* PAGINATION: TODAY WALK-INS */}
+            {initialWalkIns.totalPages > 1 && (
+              <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50/50 mt-auto">
+                <span className="text-sm text-slate-500">
+                  Page {initialWalkIns.currentPage} of {initialWalkIns.totalPages}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleTodayPageChange(initialWalkIns.currentPage - 1)}
+                    disabled={initialWalkIns.currentPage <= 1}
+                    className="px-3 py-1.5 border border-slate-200 text-slate-600 rounded-md text-sm font-medium hover:bg-white disabled:opacity-50 transition-colors"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => handleTodayPageChange(initialWalkIns.currentPage + 1)}
+                    disabled={initialWalkIns.currentPage >= initialWalkIns.totalPages}
+                    className="px-3 py-1.5 border border-slate-200 text-slate-600 rounded-md text-sm font-medium hover:bg-white disabled:opacity-50 transition-colors"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* SECTION 4: UPCOMING ONLINE APPOINTMENTS */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="border-b border-slate-100 bg-slate-50/50 p-4">
+          <h3 className="font-semibold text-slate-800">Upcoming Appointments</h3>
+          <p className="text-xs text-slate-500 mt-1">Walk-in appointments scheduled for future dates.</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">#</th>
+                <th className="px-4 py-3 font-medium">Patient Name</th>
+                <th className="px-4 py-3 font-medium">Date</th>
+                <th className="px-4 py-3 font-medium">Time</th>
+                <th className="px-4 py-3 font-medium">Service</th>
+                <th className="px-4 py-3 font-medium">Doctor</th>
+                <th className="px-4 py-3 font-medium">Slip</th>
+                <th className="px-4 py-3 font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {upcomingAppointments.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
+                    No upcoming appointments.
+                  </td>
+                </tr>
+              ) : (
+                upcomingAppointments.map((appt, idx) => (
+                  <tr key={appt.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-4 py-3 text-slate-400 font-mono text-xs">{idx + 1}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-900">{appt.patientName}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatDatePHT(appt.date, "MMMM d, yyyy")}</td>
+                    <td className="px-4 py-3 text-slate-600 font-mono text-xs">{appt.time}</td>
+                    <td className="px-4 py-3 text-slate-600">{appt.service}</td>
+                    <td className="px-4 py-3 text-slate-600">{appt.doctor}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleReprintSlip(appt as any, appt.date)}
+                        className="flex items-center gap-1 text-xs text-slate-500 hover:text-green-700 hover:bg-green-50 px-2 py-1 rounded border border-slate-200 hover:border-green-300 transition-all"
+                      >
+                        <Printer className="w-3 h-3" /> Print
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => openManageModal(appt)}
+                        className="text-xs text-slate-600 hover:text-blue-700 hover:bg-blue-50 px-2 py-1 rounded border border-slate-200 hover:border-blue-300 transition-all"
+                      >
+                        Manage
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        {/* PAGINATION: UPCOMING APPOINTMENTS */}
+        {initialUpcomingAppointments.totalPages > 1 && (
+          <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <span className="text-sm text-slate-500">
+              Page {initialUpcomingAppointments.currentPage} of {initialUpcomingAppointments.totalPages}
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleUpcomingPageChange(initialUpcomingAppointments.currentPage - 1)}
+                disabled={initialUpcomingAppointments.currentPage <= 1}
+                className="px-3 py-1.5 border border-slate-200 text-slate-600 rounded-md text-sm font-medium hover:bg-white disabled:opacity-50 transition-colors"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => handleUpcomingPageChange(initialUpcomingAppointments.currentPage + 1)}
+                disabled={initialUpcomingAppointments.currentPage >= initialUpcomingAppointments.totalPages}
+                className="px-3 py-1.5 border border-slate-200 text-slate-600 rounded-md text-sm font-medium hover:bg-white disabled:opacity-50 transition-colors"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* MANAGE APPOINTMENT MODAL */}
+      {manageTarget && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+            {/* Header */}
+            <div className="p-6 border-b border-slate-100 flex justify-between items-start">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Manage Appointment</h2>
+                <p className="text-sm text-slate-500 mt-0.5">
+                  {manageTarget.patientName} — {formatDatePHT(manageTarget.date, "MMMM d, yyyy")} at {manageTarget.time}
+                </p>
+              </div>
+              <button onClick={closeManageModal} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Current appointment details */}
+            <div className="px-6 pt-4 pb-2">
+              <div className="bg-slate-50 rounded-xl p-4 text-sm space-y-1.5 border border-slate-100">
+                {[
+                  ["Patient", manageTarget.patientName],
+                  ["Service", manageTarget.service],
+                  ["Doctor", manageTarget.doctor],
+                  ["Date", formatDatePHT(manageTarget.date, "MMMM d, yyyy")],
+                  ["Time", manageTarget.time],
+                ].map(([label, val]) => (
+                  <div key={label} className="flex justify-between gap-4">
+                    <span className="text-slate-500 font-medium">{label}</span>
+                    <span className="text-slate-900 font-semibold text-right">{val}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Options view */}
+            {manageView === "options" && (
+              <div className="p-6 space-y-3">
+                <button
+                  onClick={() => setManageView("reschedule")}
+                  className="w-full py-3 px-4 text-left rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-sm font-semibold text-slate-700 hover:text-blue-700 flex items-center gap-3"
+                >
+                  <CalendarClock className="w-5 h-5 text-blue-500" />
+                  Reschedule Appointment
+                </button>
+                <button
+                  onClick={() => setManageView("cancel")}
+                  className="w-full py-3 px-4 text-left rounded-xl border border-slate-200 hover:border-red-400 hover:bg-red-50 transition-all text-sm font-semibold text-slate-700 hover:text-red-700 flex items-center gap-3"
+                >
+                  <X className="w-5 h-5 text-red-500" />
+                  Delete Appointment
+                </button>
+              </div>
+            )}
+
+            {/* Reschedule view */}
+            {manageView === "reschedule" && (() => {
+              const mgSelectedService = services.find(s => s.id === mgServiceId);
+              const mgSlots = mgSelectedService?.name === "Ultrasound" ? clinicConfig.ultrasoundSlots : clinicConfig.allSlots;
+              const mgAvailableCount = mgSlots.length - mgBookedSlots.length;
+              return (
+                <div className="px-6 pb-6 space-y-4">
+                  <p className="text-sm font-semibold text-slate-700 mt-2">Select new service, date, and time:</p>
+
+                  {/* Service */}
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-slate-700">Service <span className="text-red-500">*</span></label>
+                    <select
+                      value={mgServiceId}
+                      onChange={(e) => { setMgServiceId(e.target.value); setMgDate(""); setMgTimeSlot(""); setMgBookedSlots([]); }}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500"
+                    >
+                      <option value="">Select Service</option>
+                      {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    {mgSelectedService && !mgSelectedService.assignedDoctor && (
+                      <p className="text-xs text-red-500">No doctor assigned to this service.</p>
+                    )}
+                  </div>
+
+                  {/* Date */}
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-slate-700">New Date <span className="text-red-500">*</span></label>
+                    <input
+                      type="date"
+                      min={todayString}
+                      value={mgDate}
+                      disabled={!mgServiceId}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (!val) { setMgDate(""); setMgTimeSlot(""); setMgBookedSlots([]); return; }
+                        const validation = validateSelectedDate(val, mgSelectedService?.name);
+                        if (!validation.isValid) { toast.error(validation.error); return; }
+                        setMgDate(val);
+                        fetchMgSlots(val, mgServiceId);
+                      }}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 disabled:opacity-50"
+                    />
+                  </div>
+
+                  {/* Time Slot */}
+                  {mgDate && mgServiceId && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <label className="text-sm font-medium text-slate-700">Time Slot <span className="text-red-500">*</span></label>
+                        {!mgIsFetchingSlots && !mgSlotError && (
+                          <span className={cn("text-xs", mgAvailableCount === 0 ? "text-red-600 font-medium" : mgAvailableCount <= 5 ? "text-orange-500 font-medium" : "text-emerald-600 font-medium")}>
+                            {mgAvailableCount} available
+                          </span>
+                        )}
+                      </div>
+                      {mgIsFetchingSlots ? (
+                        <div className="h-10 border border-slate-200 rounded-md flex items-center justify-center text-sm text-slate-400 bg-slate-50">Loading slots...</div>
+                      ) : mgSlotError ? (
+                        <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-red-100 flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />{mgSlotError}
+                        </div>
+                      ) : mgAvailableCount === 0 ? (
+                        <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg border border-red-100 flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />No slots available. Please select another date.
+                        </div>
+                      ) : (
+                        <select
+                          value={mgTimeSlot}
+                          onChange={(e) => setMgTimeSlot(e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500"
+                        >
+                          <option value="">Select Time</option>
+                          {mgSlots.map(slot => {
+                            const taken = mgBookedSlots.includes(slot);
+                            return <option key={slot} value={slot} disabled={taken} className={taken ? "text-slate-400" : ""}>{slot}{taken ? " (Taken)" : ""}</option>;
+                          })}
+                        </select>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={() => setManageView("options")} className="flex-1 py-2.5 border border-slate-200 rounded-lg text-slate-700 font-medium text-sm hover:bg-slate-50 transition-colors">
+                      Go Back
+                    </button>
+                    <button
+                      onClick={handleStaffReschedule}
+                      disabled={manageLoading || !mgServiceId || !mgDate || !mgTimeSlot || !mgSelectedService?.assignedDoctor}
+                      className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                    >
+                      {manageLoading ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : "Confirm Reschedule"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Cancel confirmation view */}
+            {manageView === "cancel" && (
+              <div className="px-6 pb-6 space-y-4">
+                <div className="bg-red-50 border border-red-100 rounded-xl p-4 flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-700">
+                    Are you sure you want to delete this appointment? This will free up the slot and <strong>cannot be undone</strong>.
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setManageView("options")} className="flex-1 py-2.5 border border-slate-200 rounded-lg text-slate-700 font-medium text-sm hover:bg-slate-50 transition-colors">
+                    Go Back
+                  </button>
+                  <button
+                    onClick={handleStaffCancel}
+                    disabled={manageLoading}
+                    className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {manageLoading ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Deleting...</> : "Yes, Delete Appointment"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* CONFIRMATION MODAL */}
       {showConfirmModal && (

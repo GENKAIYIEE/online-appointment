@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Users, Clock, CheckCircle, Stethoscope, FileText, CalendarDays } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Users, Clock, CheckCircle, Stethoscope, FileText, CalendarDays, AlertTriangle } from "lucide-react";
 import { toggleAvailability, getDoctorQueue, getDoctorSummaryCards, markAsServing, markAsNoShow } from "@/actions/doctor";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -53,8 +53,12 @@ export function DoctorConsoleClient({
 
   const [noShowAppt, setNoShowAppt] = useState<QueueItem | null>(null);
   const [isMarkingNoShow, setIsMarkingNoShow] = useState(false);
+  const [isStale, setIsStale] = useState(false);
+  const fetchQueueRef = useRef(false);
 
   const fetchQueue = useCallback(async () => {
+    if (fetchQueueRef.current) return;
+    fetchQueueRef.current = true;
     try {
       const [newSummary, newQueue] = await Promise.all([
         getDoctorSummaryCards(doctorId),
@@ -64,15 +68,42 @@ export function DoctorConsoleClient({
       setSummary(safeSummary);
       setTodayQueue(newQueue.today);
       setUpcomingQueue(newQueue.upcoming);
+      setIsStale(false);
     } catch (e) {
       console.error(e);
+      setIsStale(true);
+    } finally {
+      fetchQueueRef.current = false;
     }
   }, [doctorId]);
 
-  // Poll every 30 seconds
+  // Visibility-aware polling
   useEffect(() => {
-    const interval = setInterval(fetchQueue, 30000);
-    return () => clearInterval(interval);
+    let interval: NodeJS.Timeout;
+
+    const startPolling = () => {
+      interval = setInterval(fetchQueue, 10000);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchQueue();
+        startPolling();
+      } else {
+        clearInterval(interval);
+      }
+    };
+
+    if (document.visibilityState === "visible") {
+      startPolling();
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [fetchQueue]);
 
   const handleToggleAvailability = async () => {
@@ -84,12 +115,14 @@ export function DoctorConsoleClient({
       toast.error("Failed to update availability");
     } else {
       toast.success(`You are now ${newStatus ? "Available" : "Unavailable"}`);
+      fetchQueue();
     }
   };
 
   const handleOpenFile = async (appointmentId: string) => {
     const result = await markAsServing(appointmentId, doctorId);
     if (result.success) {
+      fetchQueue();
       router.push(`/dashboard/doctor/consultation/${appointmentId}`);
     } else {
       toast.error("Failed to open file");
@@ -262,6 +295,13 @@ export function DoctorConsoleClient({
           </div>
         </div>
       </div>
+
+      {isStale && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 shadow-sm animate-in fade-in slide-in-from-top-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          Live queue connection lost. Data may be out of date. Retrying automatically...
+        </div>
+      )}
 
       {/* SUMMARY CARDS — Today only */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">

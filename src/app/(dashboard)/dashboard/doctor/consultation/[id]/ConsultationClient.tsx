@@ -454,60 +454,85 @@ export function ConsultationClient({ appointment }: { appointment: any }) {
 
         {/* RIGHT COL: Doctor's Notes */}
         <div className="space-y-6 lg:sticky lg:top-6">
-          <div className="bg-white rounded-xl border border-emerald-200 shadow-sm overflow-hidden">
-            <div className="border-b border-emerald-100 bg-emerald-50/50 p-4">
-              <h3 className="font-semibold text-emerald-800 flex items-center gap-2">
-                <Stethoscope className="w-4 h-4" /> Consultation Notes
-              </h3>
-              <p className="text-xs text-emerald-600 mt-1">
-                Optional — notes will be visible to the patient after marking as completed.
-              </p>
-            </div>
-
-            <div className="p-4 space-y-6">
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">Diagnosis</label>
-                  <textarea
-                    rows={3}
-                    placeholder="e.g. Dental caries on lower right molar"
-                    value={diagnosis}
-                    onChange={(e) => setDiagnosis(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-emerald-500 transition-all resize-none"
-                    disabled={isCompleted}
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">Notes / What to do</label>
-                  <textarea
-                    rows={3}
-                    placeholder="e.g. Take amoxicillin 500mg 3x daily for 7 days, avoid cold drinks"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-emerald-500 transition-all resize-none"
-                    disabled={isCompleted}
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-slate-700">Follow-up Date</label>
-                  <input
-                    type="date"
-                    min={new Date().toISOString().split("T")[0]}
-                    value={followUpDate}
-                    onChange={(e) => setFollowUpDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-emerald-500 text-slate-500"
-                    disabled={isCompleted}
-                  />
-                </div>
+          {type !== "WALK_IN" ? (
+            <div className="bg-white rounded-xl border border-emerald-200 shadow-sm overflow-hidden">
+              <div className="border-b border-emerald-100 bg-emerald-50/50 p-4">
+                <h3 className="font-semibold text-emerald-800 flex items-center gap-2">
+                  <Stethoscope className="w-4 h-4" /> Consultation Notes
+                </h3>
+                <p className="text-xs text-emerald-600 mt-1">
+                  Optional — notes will be visible to the patient after marking as completed.
+                </p>
               </div>
 
-              {!isCompleted && (
+              <div className="p-4 space-y-6">
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-slate-700">Diagnosis</label>
+                    <textarea
+                      rows={3}
+                      placeholder="e.g. Dental caries on lower right molar"
+                      value={diagnosis}
+                      onChange={(e) => setDiagnosis(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-emerald-500 transition-all resize-none"
+                      disabled={isCompleted}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-slate-700">Notes / What to do</label>
+                    <textarea
+                      rows={3}
+                      placeholder="e.g. Take amoxicillin 500mg 3x daily for 7 days, avoid cold drinks"
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-emerald-500 transition-all resize-none"
+                      disabled={isCompleted}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-slate-700">Follow-up Date</label>
+                    <input
+                      type="date"
+                      min={new Date().toISOString().split("T")[0]}
+                      value={followUpDate}
+                      onChange={(e) => setFollowUpDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-emerald-500 text-slate-500"
+                      disabled={isCompleted}
+                    />
+                  </div>
+                </div>
+
+                {!isCompleted && (
+                  <button
+                    onClick={handleOpenConfirm}
+                    disabled={isSaving}
+                    className="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-md text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    {isSaving ? (
+                      <span className="flex items-center gap-2">
+                        <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                        Saving...
+                      </span>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" /> Mark as Completed
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            !isCompleted && (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <h3 className="font-semibold text-slate-800 text-sm mb-1">Complete Appointment</h3>
+                <p className="text-xs text-slate-500 mb-4">Mark this walk-in appointment as completed to clear it from your queue.</p>
                 <button
                   onClick={handleOpenConfirm}
                   disabled={isSaving}
-                  className="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-md text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2 shadow-sm"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-md text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2 shadow-sm"
                 >
                   {isSaving ? (
                     <span className="flex items-center gap-2">
@@ -520,9 +545,9 @@ export function ConsultationClient({ appointment }: { appointment: any }) {
                     </>
                   )}
                 </button>
-              )}
-            </div>
-          </div>
+              </div>
+            )
+          )}
         </div>
       </div>
 

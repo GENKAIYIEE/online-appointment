@@ -128,6 +128,23 @@ export async function createAppointment(data: {
         );
       }
 
+      const service = await tx.service.findUnique({ where: { name: data.service } });
+      if (service) {
+        const disabledSlot = await tx.disabledSlot.findFirst({
+          where: {
+            date,
+            service_id: service.id,
+            time_slot: data.timeSlot,
+          },
+        });
+
+        if (disabledSlot) {
+          throw new Error(
+            "This time slot has been disabled by staff. Please choose another slot."
+          );
+        }
+      }
+
       // 2b. Prevent duplicate: same patient booking same service on same date
       const duplicateBooking = await tx.appointment.findFirst({
         where: {
@@ -171,6 +188,7 @@ export async function createAppointment(data: {
       await tx.notification.create({
         data: {
           user_id: patientId,
+          appointmentId: appointment.id,
           message: `Your appointment for ${data.service} is confirmed.\nBooked on: ${bookedOn}\nSchedule: ${formattedDate} at ${data.timeSlot}\nPlease arrive 15 minutes before your scheduled time.`,
           isRead: false,
         },

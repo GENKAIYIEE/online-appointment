@@ -38,28 +38,32 @@ export function PatientSlotsClient({ services }: { services: Service[] }) {
   const [dayDetails, setDayDetails] = useState<SlotDetail[]>([]);
   const [isFetchingDay, setIsFetchingDay] = useState(false);
 
-  const fetchMonthData = useCallback(async () => {
+  const fetchMonthData = useCallback(async (isBackground = false) => {
     if (!selectedServiceId) return;
-    setIsFetchingMonth(true);
+    if (!isBackground) setIsFetchingMonth(true);
     try {
       const year = currentMonth.getFullYear();
       const month = currentMonth.getMonth();
       const data = await getMonthlySlotSummary(year, month, selectedServiceId);
       setSummaryData(data);
     } catch {
-      toast.error("Failed to load calendar data.");
+      if (!isBackground) toast.error("Failed to load calendar data.");
     } finally {
-      setIsFetchingMonth(false);
+      if (!isBackground) setIsFetchingMonth(false);
     }
   }, [currentMonth, selectedServiceId]);
 
   useEffect(() => {
     fetchMonthData();
+    const interval = setInterval(() => {
+      fetchMonthData(true);
+    }, 10000);
+    return () => clearInterval(interval);
   }, [fetchMonthData]);
 
-  const fetchDayData = useCallback(async (date: Date) => {
+  const fetchDayData = useCallback(async (date: Date, isBackground = false) => {
     if (!selectedServiceId) return;
-    setIsFetchingDay(true);
+    if (!isBackground) setIsFetchingDay(true);
     try {
       // Helper to get local date string YYYY-MM-DD
       const y = date.getFullYear();
@@ -70,9 +74,9 @@ export function PatientSlotsClient({ services }: { services: Service[] }) {
       const data = await getPatientDaySlotDetail(dateString, selectedServiceId);
       setDayDetails(data);
     } catch {
-      toast.error("Failed to load day details.");
+      if (!isBackground) toast.error("Failed to load day details.");
     } finally {
-      setIsFetchingDay(false);
+      if (!isBackground) setIsFetchingDay(false);
     }
   }, [selectedServiceId]);
 
@@ -80,6 +84,10 @@ export function PatientSlotsClient({ services }: { services: Service[] }) {
     if (selectedDate) {
       fetchDayData(selectedDate);
     }
+    const interval = setInterval(() => {
+      if (selectedDate) fetchDayData(selectedDate, true);
+    }, 10000);
+    return () => clearInterval(interval);
   }, [selectedDate, fetchDayData]);
 
   const handlePrevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));

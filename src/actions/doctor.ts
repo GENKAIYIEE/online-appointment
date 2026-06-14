@@ -6,6 +6,12 @@ import { formatDatePHT, getTodayPHT } from "@/lib/utils";
 
 export async function toggleAvailability(doctorId: string, isAvailable: boolean) {
   try {
+    const { verifySession } = await import("@/lib/session");
+    const session = await verifySession();
+    if (!session || session.role !== "DOCTOR") {
+      throw new Error("Unauthorized: Only doctors can toggle availability.");
+    }
+
     await prisma.user.update({
       where: { id: doctorId },
       data: { isAvailable },
@@ -172,6 +178,12 @@ export async function getDoctorQueue(doctorId: string) {
 
 export async function markAsServing(appointmentId: string, doctorId: string) {
   try {
+    const { verifySession } = await import("@/lib/session");
+    const session = await verifySession();
+    if (!session || (session.role !== "DOCTOR" && session.role !== "STAFF")) {
+      throw new Error("Unauthorized: Only doctors or staff can mark as serving.");
+    }
+
     const doctor = await prisma.user.findUnique({ 
       where: { id: doctorId },
       include: { assignedService: true } 
@@ -213,6 +225,12 @@ export async function markAsServing(appointmentId: string, doctorId: string) {
 
 export async function clearServing(doctorId: string) {
   try {
+    const { verifySession } = await import("@/lib/session");
+    const session = await verifySession();
+    if (!session || (session.role !== "DOCTOR" && session.role !== "STAFF")) {
+      throw new Error("Unauthorized: Only doctors or staff can clear serving.");
+    }
+
     const doctor = await prisma.user.findUnique({ 
       where: { id: doctorId },
       include: { assignedService: true }
@@ -323,6 +341,7 @@ export async function saveConsultation(appointmentId: string, data: {
       await tx.notification.create({
         data: {
           user_id: updatedAppt.user_id,
+          appointmentId: appointmentId,
           message: message,
           // Since icon/type aren't in schema, they would be handled by frontend parsing or a JSON metadata field, but schema only has `message`, `isRead`. 
           // We'll embed a prefix in the message if needed, but standard string is fine.
@@ -339,20 +358,25 @@ export async function saveConsultation(appointmentId: string, data: {
   }
 }
 
-export async function getConsultationHistory(doctorId: string, filters: {
-  search?: string;
-  startDate?: string;
-  endDate?: string;
-  service?: string;
-  type?: string;
-}) {
+export async function getConsultationHistory(
+  doctorId: string, 
+  filters: {
+    search?: string;
+    startDate?: string;
+    endDate?: string;
+    service?: string;
+    type?: string;
+  },
+  cursor?: string,
+  limit: number = 10
+) {
   try {
     const doctor = await prisma.user.findUnique({ 
       where: { id: doctorId },
       include: { assignedService: true }
     });
     if (!doctor) throw new Error("Doctor not found");
-    if (!doctor.assignedService) return [];
+    if (!doctor.assignedService) return { data: [], nextCursor: null };
 
     let whereClause: any = {
       service: doctor.assignedService.name,
@@ -364,7 +388,11 @@ export async function getConsultationHistory(doctorId: string, filters: {
       whereClause.service = filters.service;
     }
     if (filters.type && filters.type !== "ALL") {
-      whereClause.type = filters.type;
+      if (filters.type === "WALK_IN") {
+        whereClause.walkInPatientId = { not: null };
+      } else if (filters.type === "ONLINE") {
+        whereClause.walkInPatientId = null;
+      }
     }
     if (filters.startDate && filters.endDate) {
       const start = new Date(filters.startDate);
@@ -374,31 +402,57 @@ export async function getConsultationHistory(doctorId: string, filters: {
       whereClause.created_at = { gte: start, lte: end };
     }
 
-    const appointments = await prisma.appointment.findMany({
-      where: whereClause,
-      include: {
-        user: { include: { itr: true } },
-        walkInPatient: true,
-        consultation: true,
-      },
-      orderBy: { created_at: "desc" },
-    });
-
-    // Filter by name (client or server, let's do server but search both relations)
-    let filtered = appointments;
     if (filters.search) {
-      const term = filters.search.toLowerCase();
-      filtered = filtered.filter(a => {
-        const name1 = a.walkInPatient?.fullName?.toLowerCase() || "";
-        const name2 = a.user?.name?.toLowerCase() || "";
-        return name1.includes(term) || name2.includes(term);
-      });
+      const term = filters.search;
+      whereClause.OR = [
+        { user: { name: { contains: term, mode: "insensitive" } } },
+        { walkInPatient: { fullName: { contains: term, mode: "insensitive" } } }
+      ];
     }
 
-    return filtered;
+    const safeLimit = Math.min(limit, 50);
+
+    const fetchPage = async (currentCursor?: string) => {
+      const queryOptions: any = {
+        where: whereClause,
+        include: {
+          user: { include: { itr: true } },
+          walkInPatient: true,
+          consultation: true,
+        },
+        orderBy: { created_at: "desc" },
+        take: safeLimit + 1, // Fetch one extra to determine if there's a next page
+      };
+
+      if (currentCursor) {
+        queryOptions.cursor = { id: currentCursor };
+        queryOptions.skip = 1;
+      }
+
+      return await prisma.appointment.findMany(queryOptions);
+    };
+
+    let appointments: any[] = [];
+    try {
+      appointments = await fetchPage(cursor);
+    } catch (error: any) {
+      if (cursor) {
+        appointments = await fetchPage();
+      } else {
+        throw error;
+      }
+    }
+
+    let nextCursor: string | null = null;
+    if (appointments.length > safeLimit) {
+      const nextItem = appointments.pop();
+      nextCursor = nextItem.id;
+    }
+
+    return { data: appointments, nextCursor };
   } catch (error) {
     console.error("Error fetching history:", error);
-    return [];
+    return { data: [], nextCursor: null };
   }
 }
 
@@ -447,6 +501,7 @@ export async function markAsNoShow(appointmentId: string) {
       await tx.notification.create({
         data: {
           user_id: appointment.user_id,
+          appointmentId: appointmentId,
           message,
           isRead: false,
         },

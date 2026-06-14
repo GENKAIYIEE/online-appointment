@@ -44,17 +44,6 @@ const DEFAULT_SERVICES_ICONS: Record<string, any> = {
   "Laboratory": Microscope,
 };
 
-/** All 18 time slots from 8:00 AM to 4:30 PM at 30-minute intervals */
-const ALL_SLOTS: string[] = [
-  "08:00 AM", "08:30 AM", "09:00 AM", "09:30 AM",
-  "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM",
-  "12:00 PM", "12:30 PM", "01:00 PM", "01:30 PM",
-  "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM",
-  "04:00 PM", "04:30 PM",
-];
-
-const ULTRASOUND_SLOTS: string[] = ["08:30 AM", "09:30 AM"];
-
 // ─── Calendar Disabled Logic ──────────────────────────────────────────────────
 
 /**
@@ -74,21 +63,41 @@ function isDateDisabled(date: Date, serviceName?: string): boolean {
     if (day === 0 || day === 5 || day === 6) return true;
   }
 
-  // Disable all past dates (before today's midnight)
-  const today = startOfDay(new Date());
-  if (isBefore(date, today)) return true;
-
-  // Disable today if current time is >= 4:30 PM
+  // Get current date/time in Asia/Manila
   const now = new Date();
-  const isToday =
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false
+  });
+  
+  const parts = formatter.formatToParts(now);
+  const getPart = (type: string) => parts.find(p => p.type === type)?.value;
+  
+  const phtYear = parseInt(getPart('year') || '0', 10);
+  const phtMonth = parseInt(getPart('month') || '1', 10) - 1; // 0-indexed for Date
+  const phtDay = parseInt(getPart('day') || '1', 10);
+  const phtHour = parseInt(getPart('hour') || '0', 10);
+  const phtMinute = parseInt(getPart('minute') || '0', 10);
 
-  if (isToday) {
-    const isPastCutoff =
-      now.getHours() > 16 ||
-      (now.getHours() === 16 && now.getMinutes() >= 30);
+  // The calendar picker 'date' is created at local midnight: new Date(year, month, day, 0, 0, 0)
+  // We compare it against the PHT startOfDay.
+  const selectedDateStr = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  const phtTodayStr = `${phtYear}-${phtMonth}-${phtDay}`;
+
+  // If selected date is BEFORE PHT today
+  const selectedDateValue = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const phtTodayValue = new Date(phtYear, phtMonth, phtDay).getTime();
+
+  if (selectedDateValue < phtTodayValue) return true;
+
+  // Disable today if current time is >= 4:30 PM (16:30)
+  if (selectedDateStr === phtTodayStr) {
+    const isPastCutoff = phtHour > 16 || (phtHour === 16 && phtMinute >= 30);
     if (isPastCutoff) return true;
   }
 
@@ -100,9 +109,11 @@ function isDateDisabled(date: Date, serviceName?: string): boolean {
 export default function BookAppointmentClient({
   patientInfo,
   services,
+  clinicConfig,
 }: {
   patientInfo: any;
   services: { id: string; name: string }[];
+  clinicConfig: { allSlots: string[]; ultrasoundSlots: string[] };
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -165,10 +176,9 @@ export default function BookAppointmentClient({
   }, [selectedDate, selectedService, step, fetchBookedSlots]);
 
   // ── Derived values ───────────────────────────────────────────────────────────
-  const selectedServiceObj = services.find((s) => s.id === selectedService);
-  const selectedServiceName = selectedServiceObj ? selectedServiceObj.name : selectedService;
+  const selectedServiceName = selectedService;
   
-  const currentSlots = selectedServiceName === "Ultrasound" ? ULTRASOUND_SLOTS : ALL_SLOTS;
+  const currentSlots = selectedServiceName === "Ultrasound" ? clinicConfig.ultrasoundSlots : clinicConfig.allSlots;
   const availableCount = currentSlots.length - bookedSlots.length;
   const allSlotsTaken = availableCount === 0 && !isFetchingSlots && !slotFetchError && !!selectedDate;
 
@@ -283,11 +293,11 @@ export default function BookAppointmentClient({
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {services.map((service) => {
                 const Icon = DEFAULT_SERVICES_ICONS[service.name] || Activity;
-                const isSelected = selectedService === service.id;
+                const isSelected = selectedService === service.name;
                 return (
                   <button
                     key={service.id}
-                    onClick={() => setSelectedService(service.id)}
+                    onClick={() => setSelectedService(service.name)}
                     className={cn(
                       "flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all duration-200",
                       isSelected

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { verifySession } from "@/lib/session";
-import { getServices } from "@/actions/slots-management";
+import { getActiveServices } from "@/actions/slots-management";
 import { PatientSlotsClient } from "./PatientSlotsClient";
 
 export default async function PatientSlotsPage() {
@@ -14,7 +14,7 @@ export default async function PatientSlotsPage() {
     redirect("/login");
   }
 
-  const services = await getServices();
+  const services = await getActiveServices();
 
   return (
     <main className="p-8">

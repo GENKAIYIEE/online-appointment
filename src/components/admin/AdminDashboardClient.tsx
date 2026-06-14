@@ -25,6 +25,13 @@ export function AdminDashboardClient({ analyticsData }: AdminDashboardClientProp
 
   // Note: Session validation is now handled securely by src/middleware.ts and the server page.
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      router.refresh();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [router]);
+
   if (isValidating) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">

@@ -75,6 +75,6 @@ export function getTodayPHT(): Date {
   const month = parseInt(getPart('month') || '1', 10) - 1;
   const day = parseInt(getPart('day') || '1', 10);
 
-  // Return exactly 12:00 PM UTC to prevent ANY timezone truncation issues by Prisma
-  return new Date(`${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T12:00:00Z`);
+  // Return exactly 00:00:00 UTC to match Prisma @db.Date strict boundaries
+  return new Date(`${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00Z`);
 }

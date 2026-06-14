@@ -125,7 +125,7 @@ export function AnalyticsDashboard({ data }: { data: AnalyticsData }) {
       accent: "border-l-green-500",
     },
     {
-      title: "Total Patients",
+      title: "New Patients",
       value: stats.totalPatients,
       change: stats.patientsChange,
       icon: <Users className="w-6 h-6 text-purple-500" />,

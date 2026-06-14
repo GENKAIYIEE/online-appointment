@@ -3,7 +3,8 @@ import { verifySession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { formatDatePHT } from "@/lib/utils";
 import BookAppointmentClient from "./BookAppointmentClient";
-import { getServices } from "@/actions/slots-management";
+import { getActiveServices } from "@/actions/slots-management";
+import { getClinicConfig } from "@/actions/clinic-config";
 
 export default async function BookAppointmentPage() {
   const session = await verifySession();
@@ -36,7 +37,8 @@ export default async function BookAppointmentPage() {
     gender: patient.gender || "Not specified"
   };
 
-  const services = await getServices();
+  const services = await getActiveServices();
+  const config = await getClinicConfig();
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12">
@@ -45,7 +47,7 @@ export default async function BookAppointmentPage() {
         <p className="text-slate-500">Select a service, date, and available time slot for your visit.</p>
       </div>
 
-      <BookAppointmentClient patientInfo={patientInfo} services={services} />
+      <BookAppointmentClient patientInfo={patientInfo} services={services} clinicConfig={config} />
     </div>
   );
 }

@@ -3,17 +3,8 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { verifySession } from "@/lib/session";
-import { formatDatePHT } from "@/lib/utils";
-
-const ALL_TIME_SLOTS = [
-  "08:00 AM", "08:30 AM", "09:00 AM", "09:30 AM",
-  "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM",
-  "12:00 PM", "12:30 PM", "01:00 PM", "01:30 PM",
-  "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM",
-  "04:00 PM", "04:30 PM",
-];
-
-const ULTRASOUND_SLOTS = ["08:30 AM", "09:30 AM"];
+import { formatDatePHT, getTodayPHT } from "@/lib/utils";
+import { getClinicConfig } from "@/actions/clinic-config";
 
 // ──────────────────────────────────────────────────────────
 // GET available slots for a reschedule operation
@@ -27,7 +18,7 @@ export async function getAvailableSlotsForReschedule(
 ): Promise<string[]> {
   try {
     // Use 12:00 PM UTC to prevent ANY timezone shift (works for both local and UTC truncations)
-    const date = new Date(`${dateString}T12:00:00Z`);
+    const date = new Date(`${dateString}T00:00:00Z`);
 
     // Load the existing appointment to know its service
     const existingAppt = await prisma.appointment.findUnique({
@@ -66,8 +57,9 @@ export async function getAvailableSlotsForReschedule(
       }
     }
 
+    const config = await getClinicConfig();
     const unavailable = new Set([...bookedSlots, ...disabledSlotStrings]);
-    const currentSlots = existingAppt?.service === "Ultrasound" ? ULTRASOUND_SLOTS : ALL_TIME_SLOTS;
+    const currentSlots = existingAppt?.service === "Ultrasound" ? config.ultrasoundSlots : config.allSlots;
     return currentSlots.filter((slot) => !unavailable.has(slot));
   } catch (error) {
     console.error("Error fetching slots for reschedule:", error);
@@ -92,17 +84,28 @@ export async function rescheduleAppointment(
     }
 
     // Use 12:00 PM UTC to prevent ANY timezone shift (works for both local and UTC truncations)
-    const newDate = new Date(`${newDateString}T12:00:00Z`);
+    const newDate = new Date(`${newDateString}T00:00:00Z`);
 
     await prisma.$transaction(async (tx) => {
       // 1. Load current appointment
       const appointment = await tx.appointment.findUnique({
         where: { id: appointmentId, user_id: patientId },
+        include: { schedule: true },
       });
 
       if (!appointment) throw new Error("Appointment not found");
       if (appointment.status !== "CONFIRMED")
         throw new Error("Only confirmed appointments can be rescheduled");
+
+      const todayPHT = getTodayPHT();
+      const rawDate = new Date(appointment.schedule.date);
+      const manilaStr = rawDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' });
+      const apptManilaDate = new Date(manilaStr);
+      apptManilaDate.setHours(0, 0, 0, 0);
+
+      if (apptManilaDate.getTime() < todayPHT.getTime()) {
+        throw new Error("Cannot reschedule an appointment that has already passed.");
+      }
 
       // 2. Find or create the new schedule
       let newSchedule = await tx.schedule.findUnique({ where: { date: newDate } });
@@ -166,10 +169,10 @@ export async function rescheduleAppointment(
         });
       }
 
-      // 6. Notification
       await tx.notification.create({
         data: {
           user_id: patientId,
+          appointmentId: appointment.id,
           message: `Your appointment for ${appointment.service ?? "General Consultation"} has been rescheduled to ${formatDatePHT(newDate, "MMM d, yyyy")} at ${newTimeSlot}.`,
           isRead: false,
         },
@@ -203,11 +206,22 @@ export async function cancelAppointment(
     await prisma.$transaction(async (tx) => {
       const appointment = await tx.appointment.findUnique({
         where: { id: appointmentId, user_id: patientId },
+        include: { schedule: true },
       });
 
       if (!appointment) throw new Error("Appointment not found");
       if (appointment.status !== "CONFIRMED")
         throw new Error("Only confirmed appointments can be cancelled");
+
+      const todayPHT = getTodayPHT();
+      const rawDate = new Date(appointment.schedule.date);
+      const manilaStr = rawDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' });
+      const apptManilaDate = new Date(manilaStr);
+      apptManilaDate.setHours(0, 0, 0, 0);
+
+      if (apptManilaDate.getTime() < todayPHT.getTime()) {
+        throw new Error("Cannot cancel an appointment that has already passed.");
+      }
 
       await tx.appointment.update({
         where: { id: appointmentId },
@@ -228,7 +242,8 @@ export async function cancelAppointment(
       await tx.notification.create({
         data: {
           user_id: patientId,
-          message: `Your appointment for ${appointment.service ?? "General Consultation"} on ${formatDatePHT(appointment.created_at, "MMM d, yyyy")} has been cancelled.`,
+          appointmentId: appointment.id,
+          message: `Your appointment for ${appointment.service ?? "General Consultation"} on ${formatDatePHT(appointment.schedule.date, "MMM d, yyyy")} has been cancelled.`,
           isRead: false,
         },
       });
@@ -280,10 +295,6 @@ export async function deleteCancelledAppointment(
       await tx.appointment.delete({
         where: { id: appointmentId },
       });
-      
-      // Note: The Notification model in Prisma schema does not have an appointment_id 
-      // foreign key, so we cannot safely delete related notifications without risking 
-      // deleting unrelated ones. Notification deletion is skipped.
     });
 
     revalidatePath("/dashboard/patient/appointments");

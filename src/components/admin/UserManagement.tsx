@@ -81,7 +81,7 @@ export function UserManagement() {
   // List and Meta state
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [services, setServices] = useState<Service[]>([]);
-  const [serviceDoctorMap, setServiceDoctorMap] = useState<Record<string, { doctorName: string } | null>>({});
+  const [serviceDoctorMap, setServiceDoctorMap] = useState<Record<string, { doctorId: string; doctorName: string } | null>>({});
   const [loadingUsers, setLoadingUsers] = useState(true);
 
   // Modals state
@@ -99,8 +99,8 @@ export function UserManagement() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   // ── Fetch Initial Data ─────────────────────────────────────────────────────
-  const fetchData = useCallback(async () => {
-    setLoadingUsers(true);
+  const fetchData = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoadingUsers(true);
     try {
       const [resUsers, svcs, svcDocMap] = await Promise.all([
         fetch("/api/admin/users"),
@@ -110,20 +110,24 @@ export function UserManagement() {
 
       if (resUsers.ok) {
         setUsers(await resUsers.json());
-      } else {
+      } else if (!isBackground) {
         toast.error("Failed to load users");
       }
       setServices(svcs);
       setServiceDoctorMap(svcDocMap);
     } catch {
-      toast.error("Network error loading data");
+      if (!isBackground) toast.error("Network error loading data");
     } finally {
-      setLoadingUsers(false);
+      if (!isBackground) setLoadingUsers(false);
     }
   }, []);
 
   useEffect(() => {
     fetchData();
+    const interval = setInterval(() => {
+      fetchData(true);
+    }, 10000);
+    return () => clearInterval(interval);
   }, [fetchData]);
 
   const openEditModal = (user: UserRecord) => {
@@ -145,8 +149,6 @@ export function UserManagement() {
   // ── Create user ──────────────────────────────────────────────────────────
   const doCreate = async (forceReassign = false) => {
     setCreating(true);
-    setConfirmOverrideServiceId(null);
-    setOverrideMode(null);
     try {
       const res = await fetch("/api/admin/users", {
         method: "POST",
@@ -172,13 +174,19 @@ export function UserManagement() {
         setPhone("");
         setRole("STAFF");
         setAssignedServiceId("");
+        setConfirmOverrideServiceId(null);
+        setOverrideMode(null);
         fetchData();
       } else {
         const data = await res.json();
         toast.error(data.error || "Failed to create user");
+        setConfirmOverrideServiceId(null);
+        setOverrideMode(null);
       }
     } catch {
       toast.error("Network error while creating user");
+      setConfirmOverrideServiceId(null);
+      setOverrideMode(null);
     } finally {
       setCreating(false);
     }
@@ -248,8 +256,6 @@ export function UserManagement() {
     }
 
     setIsUpdating(true);
-    setConfirmOverrideServiceId(null);
-    setOverrideMode(null);
     try {
       const payload: any = {
         name: editUser.name.trim(),
@@ -271,13 +277,19 @@ export function UserManagement() {
       if (res.ok) {
         toast.success("User updated successfully!");
         closeEditModal();
+        setConfirmOverrideServiceId(null);
+        setOverrideMode(null);
         fetchData();
       } else {
         const data = await res.json();
         toast.error(data.error || "Failed to update user");
+        setConfirmOverrideServiceId(null);
+        setOverrideMode(null);
       }
     } catch {
       toast.error("Network error while updating");
+      setConfirmOverrideServiceId(null);
+      setOverrideMode(null);
     } finally {
       setIsUpdating(false);
     }
@@ -476,7 +488,7 @@ export function UserManagement() {
           <Button
             variant="outline"
             size="sm"
-            onClick={fetchData}
+            onClick={() => fetchData()}
             disabled={loadingUsers}
             className="flex items-center gap-2"
           >

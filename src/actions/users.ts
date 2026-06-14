@@ -2,8 +2,13 @@
 
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
+import { verifySession } from '@/lib/session';
+import { createAuditLog } from '@/lib/audit';
 
 export async function getStaffAndDoctors() {
+  const session = await verifySession();
+  if (!session || session.role !== 'ADMIN') throw new Error('Unauthorized');
+
   const users = await prisma.user.findMany({
     where: { role: { in: ['STAFF', 'DOCTOR'] } },
     include: { assignedService: true },
@@ -29,6 +34,12 @@ export async function createStaffOrDoctor(data: {
   }
 
   const passwordHash = data.password ? await bcrypt.hash(data.password, 10) : undefined;
+
+  const session = await verifySession();
+  if (!session || session.role !== "ADMIN") {
+    throw new Error('Unauthorized: Only admins can perform this action.');
+  }
+  const actorId = session.userId;
 
   return await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
@@ -58,6 +69,13 @@ export async function createStaffOrDoctor(data: {
       });
     }
 
+    await createAuditLog(tx, actorId, 'CREATE_USER', 'User', user.id, {
+      role: user.role,
+      email: user.email,
+      name: user.name,
+      assignedServiceId: data.assignedServiceId
+    });
+
     return user;
   });
 }
@@ -73,6 +91,12 @@ export async function updateStaffOrDoctor(
   }
 ) {
   const passwordHash = data.password ? await bcrypt.hash(data.password, 10) : undefined;
+
+  const session = await verifySession();
+  if (!session || session.role !== "ADMIN") {
+    throw new Error('Unauthorized: Only admins can perform this action.');
+  }
+  const actorId = session.userId;
 
   return await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUnique({
@@ -130,11 +154,23 @@ export async function updateStaffOrDoctor(
       }
     }
 
+    await createAuditLog(tx, actorId, 'UPDATE_USER', 'User', updatedUser.id, {
+      name: updatedUser.name,
+      role: updatedUser.role,
+      assignedServiceId: data.assignedServiceId
+    });
+
     return updatedUser;
   });
 }
 
 export async function deleteUser(id: string) {
+  const session = await verifySession();
+  if (!session || session.role !== "ADMIN") {
+    throw new Error('Unauthorized: Only admins can perform this action.');
+  }
+  const actorId = session.userId;
+
   return await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUnique({
       where: { id },
@@ -151,13 +187,23 @@ export async function deleteUser(id: string) {
       });
     }
 
-    return await tx.user.delete({
+    const deletedUser = await tx.user.delete({
       where: { id },
     });
+
+    await createAuditLog(tx, actorId, 'DELETE_USER', 'User', id, {
+      email: deletedUser.email,
+      role: deletedUser.role
+    });
+
+    return deletedUser;
   });
 }
 
 export async function getServiceDoctorMap() {
+  const session = await verifySession();
+  if (!session || session.role !== 'ADMIN') throw new Error('Unauthorized');
+
   const services = await prisma.service.findMany({
     include: { assignedDoctor: true },
   });

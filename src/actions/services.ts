@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { verifySession } from "@/lib/session";
-import { logAction } from "@/lib/audit";
+import { createAuditLog } from "@/lib/audit";
 
 export async function createService(data: { name: string; doctorId?: string; doctorName?: string }) {
   try {
@@ -34,18 +34,20 @@ export async function createService(data: { name: string; doctorId?: string; doc
       }
     }
 
-    await prisma.service.create({
-      data: {
-        name: data.name,
-        doctor_name: doctor ? doctor.name : "Unassigned", // Legacy sync
-        assigned_doctor_id: doctor ? doctor.id : null,
-      },
-    });
+    await prisma.$transaction(async (tx) => {
+      const newService = await tx.service.create({
+        data: {
+          name: data.name,
+          doctor_name: doctor ? doctor.name : "Unassigned", // Legacy sync
+          assigned_doctor_id: doctor ? doctor.id : null,
+        },
+      });
 
-    await logAction("CREATE_SERVICE", "SYSTEM", "NEW_SERVICE", {
-      name: data.name,
-      assignedDoctor: doctor ? doctor.name : "Unassigned"
-    }, session.name || session.userId);
+      await createAuditLog(tx, session.userId || "UNKNOWN", "CREATE_SERVICE", "Service", newService.id, {
+        name: data.name,
+        assignedDoctor: doctor ? doctor.name : "Unassigned"
+      });
+    });
 
     revalidatePath("/dashboard/admin/services");
     revalidatePath("/dashboard/admin/users");
@@ -85,11 +87,11 @@ export async function deleteService(serviceId: string) {
       await tx.service.delete({
         where: { id: serviceId }
       });
-    });
 
-    await logAction("DELETE_SERVICE", "SYSTEM", serviceId, {
-      name: service.name
-    }, session.name || session.userId);
+      await createAuditLog(tx, session.userId || "UNKNOWN", "DELETE_SERVICE", "Service", serviceId, {
+        name: service.name
+      });
+    });
 
     revalidatePath("/dashboard/admin/services");
     revalidatePath("/dashboard/admin/users");

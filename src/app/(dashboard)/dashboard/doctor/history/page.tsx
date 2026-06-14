@@ -1,4 +1,5 @@
-import { getConsultationHistory } from "@/actions/doctor";
+import { redirect } from "next/navigation";
+import { verifySession } from "@/lib/session";
 import { HistoryClient } from "./HistoryClient";
 import { prisma } from "@/lib/prisma";
 
@@ -15,6 +16,11 @@ export default async function ConsultationHistoryPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
+  const session = await verifySession();
+  if (!session || session.role !== "DOCTOR") {
+    redirect("/login");
+  }
+
   const sp = await searchParams;
 
   const filters: Filters = {
@@ -25,20 +31,10 @@ export default async function ConsultationHistoryPage({
     type: typeof sp.type === "string" ? sp.type : undefined,
   };
 
-  const doctor = await prisma.user.findFirst({ where: { role: "DOCTOR" } });
+  const services = await prisma.service.findMany({ 
+    where: { assigned_doctor_id: session.userId },
+    select: { name: true } 
+  });
 
-  if (!doctor) {
-    return (
-      <div className="p-8 text-center text-slate-500">
-        No doctor account found in the system.
-      </div>
-    );
-  }
-
-  const [history, services] = await Promise.all([
-    getConsultationHistory(doctor.id, filters),
-    prisma.service.findMany({ select: { name: true } }),
-  ]);
-
-  return <HistoryClient history={history} services={services} />;
+  return <HistoryClient services={services} />;
 }

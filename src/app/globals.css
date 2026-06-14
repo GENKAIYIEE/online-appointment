@@ -123,6 +123,15 @@
   input::placeholder, textarea::placeholder {
     color: var(--color-text-muted) !important;
   }
+
+  /* Prevent browsers (like MS Edge) from injecting their own "reveal password" eye icon */
+  input[type="password"]::-ms-reveal,
+  input[type="password"]::-ms-clear {
+    display: none;
+  }
+  input[type="password"]::-webkit-reveal {
+    display: none;
+  }
 }
 
 /* Global Transitions */

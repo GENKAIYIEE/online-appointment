@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, Filter, CalendarDays, User, FileText, ChevronDown, ChevronUp } from "lucide-react";
+import { Search, Filter, CalendarDays, User, FileText, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { formatDatePHT } from "@/lib/utils";
 
-export function HistoryClient({ history, services }: { history: any[]; services: any[] }) {
+export function HistoryClient({ services }: { services: any[] }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -17,6 +17,54 @@ export function HistoryClient({ history, services }: { history: any[]; services:
   const [type, setType] = useState(searchParams.get("type") || "ALL");
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const [items, setItems] = useState<any[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async (cursor: string | null = null, isBackground = false) => {
+    if (!isBackground) setIsLoading(true);
+    if (!isBackground) setError(null);
+    try {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("limit", "10");
+      if (cursor) {
+        params.set("cursor", cursor);
+      }
+      
+      const res = await fetch(`/api/doctor/history?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch history");
+      
+      const result = await res.json();
+      
+      setItems(prev => cursor ? [...prev, ...result.data] : result.data);
+      setNextCursor(result.nextCursor);
+    } catch (err: any) {
+      if (!isBackground) setError(err.message || "An error occurred while fetching history.");
+    } finally {
+      if (!isBackground) setIsLoading(false);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    setItems([]);
+    setNextCursor(null);
+    fetchData(null);
+    
+    // Background polling (only if we are on the first page to not wipe out load more data)
+    const interval = setInterval(() => {
+      // We check if items.length <= 10. If it's more, it means they clicked Load More.
+      // If so, we don't auto-refresh so we don't mess up their scrolling view.
+      setItems((currentItems) => {
+        if (currentItems.length <= 10) {
+          fetchData(null, true);
+        }
+        return currentItems;
+      });
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
 
   const handleApplyFilters = () => {
     const params = new URLSearchParams();
@@ -121,13 +169,17 @@ export function HistoryClient({ history, services }: { history: any[]; services:
 
       {/* LIST */}
       <div className="space-y-4">
-        {history.length === 0 ? (
+        {isLoading && items.length === 0 ? (
+          <div className="flex justify-center p-12">
+            <Loader2 className="w-8 h-8 text-green-600 animate-spin" />
+          </div>
+        ) : items.length === 0 ? (
           <div className="bg-slate-50 border border-dashed border-slate-300 rounded-xl p-12 text-center text-slate-500">
             <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
             <p>No consultation history found matching your filters.</p>
           </div>
         ) : (
-          history.map(item => {
+          items.map(item => {
             const isWalkIn = item.type === "WALK_IN";
             const patientName = isWalkIn ? item.walkInPatient?.fullName : item.user?.name;
             const age = isWalkIn ? item.walkInPatient?.age : getAge(item.user?.birthday);
@@ -247,6 +299,25 @@ export function HistoryClient({ history, services }: { history: any[]; services:
               </div>
             );
           })
+        )}
+
+        {error && (
+          <div className="p-4 bg-red-50 border border-red-100 text-red-600 rounded-lg text-sm text-center my-4">
+            {error}
+          </div>
+        )}
+
+        {nextCursor && (
+          <div className="flex justify-center pt-6 pb-4">
+            <button
+              onClick={() => fetchData(nextCursor)}
+              disabled={isLoading}
+              className="flex items-center gap-2 px-6 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-full text-sm font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            >
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {isLoading ? "Loading..." : "Load More"}
+            </button>
+          </div>
         )}
       </div>
     </div>

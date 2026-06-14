@@ -50,8 +50,8 @@ export function ServiceManagement() {
   const [deleteServiceId, setDeleteServiceId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const fetchData = async () => {
-    setIsLoading(true);
+  const fetchData = async (isBackground = false) => {
+    if (!isBackground) setIsLoading(true);
     try {
       const [svcRes, usrRes] = await Promise.all([
         fetch("/api/admin/services"),
@@ -65,19 +65,23 @@ export function ServiceManagement() {
         setServices(svcs);
         // Filter only doctors
         setDoctors(usrs.filter((u: User) => u.role === "DOCTOR"));
-      } else {
+      } else if (!isBackground) {
         toast.error("Failed to load data");
       }
     } catch (e) {
       console.error(e);
-      toast.error("Error connecting to server");
+      if (!isBackground) toast.error("Error connecting to server");
     } finally {
-      setIsLoading(false);
+      if (!isBackground) setIsLoading(false);
     }
   };
 
   useEffect(() => {
     fetchData();
+    const interval = setInterval(() => {
+      fetchData(true);
+    }, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleCreateService = async (e: React.FormEvent) => {
@@ -135,7 +139,7 @@ export function ServiceManagement() {
           <h2 className="text-2xl font-bold tracking-tight text-slate-900">Service Management</h2>
           <p className="text-slate-500">Add or remove clinic services and manage doctor assignments.</p>
         </div>
-        <Button onClick={fetchData} variant="outline" size="sm" className="gap-2">
+        <Button onClick={() => fetchData()} variant="outline" size="sm" className="gap-2">
           <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>

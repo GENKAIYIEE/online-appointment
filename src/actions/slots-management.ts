@@ -2,6 +2,9 @@
 
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { verifySession } from "@/lib/session";
+import { createAuditLog } from "@/lib/audit";
+import { getClinicConfig } from "@/actions/clinic-config";
 
 export async function getServices() {
   try {
@@ -15,13 +18,18 @@ export async function getServices() {
   }
 }
 
-const ALL_SLOTS = [
-  "08:00 AM", "08:30 AM", "09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM",
-  "11:00 AM", "11:30 AM", "12:00 PM", "12:30 PM", "01:00 PM", "01:30 PM",
-  "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM", "04:00 PM", "04:30 PM",
-];
-
-const ULTRASOUND_SLOTS = ["08:30 AM", "09:30 AM"];
+export async function getActiveServices() {
+  try {
+    return await prisma.service.findMany({
+      where: { assigned_doctor_id: { not: null } },
+      orderBy: { name: "asc" },
+      include: { assignedDoctor: true },
+    });
+  } catch (error) {
+    console.error("Error fetching active services:", error);
+    return [];
+  }
+}
 
 export type DaySummary = {
   date: string;
@@ -39,6 +47,8 @@ export async function getMonthlySlotSummary(
   try {
     const service = await prisma.service.findUnique({ where: { id: serviceId } });
     if (!service) return [];
+    
+    const config = await getClinicConfig();
 
     // month is 0-indexed in JS Dates
     const startDate = new Date(year, month, 1);
@@ -124,7 +134,7 @@ export async function getMonthlySlotSummary(
       const dStr = getLocalDateString(iterDate);
       const disabled = disabledCountByDate[dStr] || 0;
       const booked = bookedCountByDate[dStr] || 0;
-      const totalSlots = isUltrasound ? ULTRASOUND_SLOTS.length : ALL_SLOTS.length;
+      const totalSlots = isUltrasound ? config.ultrasoundSlots.length : config.allSlots.length;
       const available = Math.max(0, totalSlots - disabled - booked);
 
       summary.push({
@@ -158,6 +168,8 @@ export async function getDaySlotDetail(
 
     const service = await prisma.service.findUnique({ where: { id: serviceId } });
     if (!service) return [];
+    
+    const config = await getClinicConfig();
 
     // Fetch disabled slots for the day
     const disabledSlots = await prisma.disabledSlot.findMany({
@@ -191,7 +203,7 @@ export async function getDaySlotDetail(
       bookedMap.set(appt.time_slot, pName);
     }
 
-    const currentSlots = service.name === "Ultrasound" ? ULTRASOUND_SLOTS : ALL_SLOTS;
+    const currentSlots = service.name === "Ultrasound" ? config.ultrasoundSlots : config.allSlots;
 
     // Map standard slots
     return currentSlots.map((time_slot) => {
@@ -216,35 +228,54 @@ export async function toggleSlotStatus(
   action: "Available" | "Disabled"
 ) {
   try {
+    const session = await verifySession();
+    if (!session || (session.role !== "ADMIN" && session.role !== "STAFF")) {
+      throw new Error("Unauthorized: Only admins and staff can manage slots.");
+    }
+    const actorId = session.userId;
     const date = new Date(`${dateString}T00:00:00Z`);
 
-    if (action === "Disabled") {
-      // Create DisabledSlot
-      await prisma.disabledSlot.upsert({
-        where: {
-          date_service_id_time_slot: {
+    await prisma.$transaction(async (tx) => {
+      if (action === "Disabled") {
+        // Create DisabledSlot
+        const slot = await tx.disabledSlot.upsert({
+          where: {
+            date_service_id_time_slot: {
+              date,
+              service_id: serviceId,
+              time_slot: timeSlot,
+            },
+          },
+          create: {
             date,
             service_id: serviceId,
             time_slot: timeSlot,
           },
-        },
-        create: {
-          date,
-          service_id: serviceId,
-          time_slot: timeSlot,
-        },
-        update: {},
-      });
-    } else {
-      // Action is "Available", remove DisabledSlot
-      await prisma.disabledSlot.deleteMany({
-        where: {
-          date,
-          service_id: serviceId,
-          time_slot: timeSlot,
-        },
-      });
-    }
+          update: {},
+        });
+
+        await createAuditLog(tx, actorId, "DISABLE_SLOT", "DisabledSlot", slot.id, {
+          date: dateString,
+          timeSlot,
+          serviceId
+        });
+      } else {
+        // Action is "Available", remove DisabledSlot
+        await tx.disabledSlot.deleteMany({
+          where: {
+            date,
+            service_id: serviceId,
+            time_slot: timeSlot,
+          },
+        });
+
+        await createAuditLog(tx, actorId, "ENABLE_SLOT", "DisabledSlot", null, {
+          date: dateString,
+          timeSlot,
+          serviceId
+        });
+      }
+    });
     
     revalidatePath("/dashboard/staff/slots");
     return { success: true };
@@ -281,7 +312,8 @@ export async function getPatientDaySlotDetail(
     
     const bookedSet = new Set(appointments.map((a) => a.time_slot));
 
-    const currentSlots = service.name === "Ultrasound" ? ULTRASOUND_SLOTS : ALL_SLOTS;
+    const config = await getClinicConfig();
+    const currentSlots = service.name === "Ultrasound" ? config.ultrasoundSlots : config.allSlots;
 
     return currentSlots.map((time_slot) => {
       if (bookedSet.has(time_slot)) {

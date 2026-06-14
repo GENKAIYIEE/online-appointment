@@ -18,7 +18,8 @@ import {
   CalendarClock,
   ClipboardEdit,
   CalendarSearch,
-  PieChart
+  PieChart,
+  ClipboardCheck
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +43,7 @@ const navItems: Record<NonNullable<Role>, NavItem[]> = {
   staff: [
     { name: "Staff Desk", href: "/dashboard/staff", icon: MonitorCheck },
     { name: "Slot Management", href: "/dashboard/staff/slots", icon: CalendarClock },
+    { name: "Patient Records", href: "/dashboard/staff/records", icon: ClipboardCheck },
   ],
   doctor: [
     { name: "Doctor's Console", href: "/dashboard/doctor", icon: MonitorCheck },

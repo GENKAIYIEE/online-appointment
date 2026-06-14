@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
   Card,
@@ -18,9 +18,10 @@ import { User, ShieldCheck, Loader2 } from "lucide-react";
 
 export default function SettingsPage() {
   // --- Profile ---
-  const [name, setName] = useState("System Admin");
-  const [email, setEmail] = useState("admin@rhu-agoo.gov.ph");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
 
   // --- Security ---
   const [currentPassword, setCurrentPassword] = useState("");
@@ -29,11 +30,42 @@ export default function SettingsPage() {
   const [passwordError, setPasswordError] = useState("");
   const [securityLoading, setSecurityLoading] = useState(false);
 
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const res = await fetch("/api/admin/settings/profile");
+        if (res.ok) {
+          const data = await res.json();
+          setName(data.name || "");
+          setEmail(data.email || "");
+        }
+      } catch (error) {
+        console.error("Failed to load profile", error);
+      }
+    };
+    fetchProfile();
+  }, []);
+
   const handleSaveProfile = async () => {
+    setProfileError("");
     setProfileLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
-    toast.success("Profile updated successfully.");
-    setProfileLoading(false);
+    try {
+      const res = await fetch("/api/admin/settings/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("Profile updated successfully.");
+      } else {
+        setProfileError(data.error || "Failed to update profile.");
+      }
+    } catch (error) {
+      setProfileError("An unexpected error occurred.");
+    } finally {
+      setProfileLoading(false);
+    }
   };
 
   const handleUpdatePassword = async () => {
@@ -53,12 +85,26 @@ export default function SettingsPage() {
     }
 
     setSecurityLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
-    toast.success("Password updated successfully.");
-    setCurrentPassword("");
-    setNewPassword("");
-    setConfirmPassword("");
-    setSecurityLoading(false);
+    try {
+      const res = await fetch("/api/admin/settings/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("Password updated successfully.");
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      } else {
+        setPasswordError(data.error || "Failed to update password.");
+      }
+    } catch (error) {
+      setPasswordError("An unexpected error occurred.");
+    } finally {
+      setSecurityLoading(false);
+    }
   };
 
   return (
@@ -113,6 +159,12 @@ export default function SettingsPage() {
               />
             </div>
           </div>
+          {profileError && (
+            <p className="text-sm text-red-600 flex items-center gap-1.5 mt-2">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-600" />
+              {profileError}
+            </p>
+          )}
         </CardContent>
         <CardFooter className="border-t bg-slate-50/60 flex justify-end px-6 py-4">
           <Button

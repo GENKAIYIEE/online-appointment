@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 import Link from "next/link";
 import { format, isBefore, startOfDay, isSunday, isFriday, isSaturday } from "date-fns";
@@ -57,8 +58,11 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, isPast }: { status: string; isPast?: boolean }) {
   if (status === "CONFIRMED") {
+    if (isPast) {
+      return null;
+    }
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap bg-[#FFFBEB] text-[#D97706] border border-[#FDE68A]">
         <Clock className="w-3 h-3" />
@@ -103,8 +107,18 @@ function AppointmentCard({
   onViewNotes: () => void;
   onRemove: () => void;
 }) {
+  const todayPHT = getTodayPHT();
+  const rawDate = new Date(appointment.schedule.date);
+  const manilaStr = rawDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' });
+  const apptManilaDate = new Date(manilaStr);
+  apptManilaDate.setHours(0, 0, 0, 0);
+  const isPast = apptManilaDate.getTime() < todayPHT.getTime();
+
   return (
-    <Card className="border-slate-200 shadow-sm hover:shadow-md transition-all duration-200 group">
+    <Card className={cn(
+      "border-slate-200 shadow-sm hover:shadow-md transition-all duration-200 group",
+      isPast && "opacity-60 grayscale-[0.2]"
+    )}>
       <CardContent className="p-5">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           {/* Left: Icon + Info */}
@@ -142,8 +156,13 @@ function AppointmentCard({
 
           {/* Right: Badge + Actions */}
           <div className="flex sm:flex-col items-center sm:items-end gap-3 shrink-0">
-            <StatusBadge status={appointment.status} />
-            {appointment.status === "CONFIRMED" && (
+            <StatusBadge status={appointment.status} isPast={isPast} />
+            {appointment.status === "CONFIRMED" && isPast && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                Past
+              </span>
+            )}
+            {appointment.status === "CONFIRMED" && !isPast && (
               <div className="flex gap-2">
                 <Button
                   size="sm"
@@ -205,10 +224,18 @@ export default function AppointmentsClient({
   dbError: boolean;
 }) {
   const [localAppointments, setLocalAppointments] = useState(appointments);
+  const router = useRouter();
 
   useEffect(() => {
     setLocalAppointments(appointments);
   }, [appointments]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      router.refresh();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [router]);
 
   const [activeTab, setActiveTab] = useState<Tab>("all");
   const [currentPage, setCurrentPage] = useState(1);

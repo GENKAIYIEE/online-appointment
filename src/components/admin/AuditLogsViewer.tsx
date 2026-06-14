@@ -34,27 +34,45 @@ interface AuditLog {
 export function AuditLogsViewer() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
-  const fetchLogs = useCallback(async () => {
-    setLoading(true);
+  const fetchLogs = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
-      const res = await fetch("/api/admin/audit-logs");
+      const res = await fetch(`/api/admin/audit-logs?page=${page}`);
       if (res.ok) {
         const data = await res.json();
-        setLogs(data);
-      } else {
+        setLogs(data.logs);
+        setTotalPages(data.totalPages);
+      } else if (!isBackground) {
         toast.error("Failed to load audit logs");
       }
     } catch {
-      toast.error("Network error loading audit logs");
+      if (!isBackground) toast.error("Network error loading audit logs");
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
-  }, []);
+  }, [page]);
+
+  const handleRefresh = () => {
+    if (page === 1) {
+      fetchLogs();
+    } else {
+      setPage(1);
+    }
+  };
 
   useEffect(() => {
     fetchLogs();
-  }, [fetchLogs]);
+    const interval = setInterval(() => {
+      // Only poll automatically if on the first page
+      if (page === 1) {
+        fetchLogs(true);
+      }
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [fetchLogs, page]);
 
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleString("en-US", {
@@ -94,7 +112,7 @@ export function AuditLogsViewer() {
         <Button
           variant="outline"
           size="sm"
-          onClick={fetchLogs}
+          onClick={handleRefresh}
           disabled={loading}
           className="flex items-center gap-2"
         >
@@ -136,6 +154,34 @@ export function AuditLogsViewer() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+        )}
+
+        {totalPages > 1 && !loading && (
+          <div className="flex items-center justify-between mt-4 border-t pt-4">
+            <p className="text-sm text-slate-500 font-medium">
+              Page {page} of {totalPages}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="hover:bg-green-50 hover:text-green-600 hover:border-green-200"
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="hover:bg-green-50 hover:text-green-600 hover:border-green-200"
+              >
+                Next
+              </Button>
+            </div>
           </div>
         )}
       </CardContent>

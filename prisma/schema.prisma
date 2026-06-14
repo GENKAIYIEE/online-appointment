@@ -117,6 +117,8 @@
 
     consultation    Consultation?
 
+    notifications   Notification[]
+
     @@map("appointments")
   }
 
@@ -176,6 +178,9 @@
 
     user_id     String
     user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+    appointmentId String?
+    appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
 
     @@map("notifications")
   }
@@ -305,4 +310,14 @@
     updatedAt       DateTime @default(now())
 
     @@map("itr_history")
+  }
+
+  /// Stores runtime configuration like clinic hours
+  model ClinicConfig {
+    key       String   @id
+    value     Json
+    updatedAt DateTime @updatedAt
+    updatedBy String   // admin user id
+
+    @@map("clinic_configs")
   }
