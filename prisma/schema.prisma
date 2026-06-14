@@ -1,81 +1,323 @@
-// This is your Prisma schema file for the RHU Agoo Online Appointment System.
-// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+  // This is your Prisma schema file for the RHU Agoo Online Appointment System.
+  // Learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
-}
+  generator client {
+    provider = "prisma-client"
+    output   = "../src/generated/prisma"
+  }
 
-datasource db {
-  provider  = "postgresql"
-}
+  datasource db {
+    provider  = "postgresql"
+  }
 
-// =============================================
-// ENUMS
-// =============================================
+  // =============================================
+  // ENUMS
+  // =============================================
 
-enum Role {
-  PATIENT
-  ADMIN
-  STAFF
-}
+  enum Role {
+    STAFF
+    PATIENT
+    ADMIN
+    DOCTOR
+  }
 
-enum AppointmentStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
-  COMPLETED
-  NO_SHOW
-}
+  enum AppointmentStatus {
+    CONFIRMED
+    CANCELLED
+    COMPLETED
+    NO_SHOW
+  }
 
-enum AppointmentType {
-  WALK_IN
-  ONLINE
-}
+  enum AppointmentType {
+    WALK_IN
+    ONLINE
+  }
 
-// =============================================
-// MODELS
-// =============================================
+  // =============================================
+  // MODELS
+  // =============================================
 
-/// Represents a user of the system (patient, admin, or staff).
-model User {
-  id           String        @id @default(cuid())
-  role         Role          @default(PATIENT)
-  name         String
-  phone        String?       @unique
-  created_at   DateTime      @default(now())
+  /// Represents a user of the system (patient, admin, or staff).
+  model User {
+    id           String        @id @default(cuid())
+    role         Role          @default(PATIENT)
+    name         String
+    email        String?       @unique
+    password     String?
+    gender       String?
+    phone        String?       @unique
 
-  appointments Appointment[]
+    // ITR Registration Demographics
+    firstName    String?
+    lastName     String?
+    middleName   String?
+    suffix       String?
+    birthday     DateTime?     @db.Date
+    maritalStatus String?
+    address      String?
 
-  @@map("users")
-}
+    isAvailable  Boolean       @default(true) // For DOCTOR role
+    created_at   DateTime      @default(now())
 
-/// Represents a daily schedule slot managed by RHU staff.
-model Schedule {
-  id            String        @id @default(cuid())
-  date          DateTime      @unique @db.Date
-  max_capacity  Int           @default(30)
-  booked_count  Int           @default(0)
-  created_at    DateTime      @default(now())
+    appointments Appointment[]
+    notifications Notification[]
+    itr          ITR?
 
-  appointments  Appointment[]
+    // Assigned service (only applicable if role = DOCTOR)
+    assignedService Service?
 
-  @@map("schedules")
-}
+    @@map("users")
+  }
 
-/// Represents a patient appointment linked to a schedule slot.
-model Appointment {
-  id          String            @id @default(cuid())
-  status      AppointmentStatus @default(PENDING)
-  type        AppointmentType   @default(ONLINE)
-  created_at  DateTime          @default(now())
+  /// Represents a daily schedule slot managed by RHU staff.
+  model Schedule {
+    id            String        @id @default(cuid())
+    date          DateTime      @unique @db.Date
+    max_capacity  Int           @default(30)
+    booked_count  Int           @default(0)
+    created_at    DateTime      @default(now())
 
-  // Relations
-  user        User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  user_id     String
+    appointments  Appointment[]
 
-  schedule    Schedule          @relation(fields: [schedule_id], references: [id], onDelete: Cascade)
-  schedule_id String
+    @@map("schedules")
+  }
 
-  @@map("appointments")
-}
+  /// Represents a patient appointment linked to a schedule slot.
+  model Appointment {
+    id          String            @id @default(cuid())
+    status      AppointmentStatus @default(CONFIRMED)
+    type        AppointmentType   @default(ONLINE)
+    service     String?
+    doctor_name String?
+    time_slot   String?
+    room        String?
+    notes       String?
+    created_at  DateTime          @default(now())
+    bookedAt    DateTime          @default(now())
+
+    // Relations
+    user        User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+    user_id     String
+
+    schedule    Schedule          @relation(fields: [schedule_id], references: [id], onDelete: Cascade)
+    schedule_id String
+
+    walkInPatient   WalkInPatient? @relation(fields: [walkInPatientId], references: [id])
+    walkInPatientId String?
+
+    // Patient-visible consultation notes
+    consultationDiagnosis String?
+    consultationNotes     String?
+    followUpDate          DateTime? @db.Date
+    completedAt           DateTime?
+
+    // No Show Tracking
+    noShowMarkedAt        DateTime?
+    noShowMarkedBy        String?
+
+    consultation    Consultation?
+
+    notifications   Notification[]
+
+    @@map("appointments")
+  }
+
+  /// Stores doctor's notes and vitals for a completed or ongoing consultation
+  model Consultation {
+    id                String      @id @default(cuid())
+    appointmentId     String      @unique
+    appointment       Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+    
+    vitalSigns        Json?
+    chiefComplaint    String?
+    diagnosis         String?
+    prescriptionNotes String?
+    followUpDate      DateTime?   @db.Date
+    
+    createdAt         DateTime    @default(now())
+    completedAt       DateTime?
+
+    @@map("consultations")
+  }
+
+  /// Stores basic info of a walk-in patient encoded by staff from the paper ITR form.
+  model WalkInPatient {
+    id            String        @id @default(cuid())
+    fullName      String
+    birthday      DateTime      @db.Date
+    age           Int
+    sex           String
+    contactNumber String
+    address       String
+    createdAt     DateTime      @default(now())
+
+    appointments  Appointment[]
+
+    @@map("walk_in_patients")
+  }
+
+  /// Represents a system action taken by an administrator
+  model AuditLog {
+    id          String   @id @default(cuid())
+    action      String   // e.g., "CREATE_USER", "UPDATE_CONFIG"
+    entity      String   // e.g., "USER", "CONFIG"
+    entity_id   String?  // ID of the affected record
+    details     Json?    // Contextual details
+    actor       String   // Name or ID of the admin who performed it
+    created_at  DateTime @default(now())
+
+    @@map("audit_logs")
+  }
+
+  /// Represents a notification sent to a user
+  model Notification {
+    id          String   @id @default(cuid())
+    message     String
+    isRead      Boolean  @default(false)
+    created_at  DateTime @default(now())
+
+    user_id     String
+    user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+    appointmentId String?
+    appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+    @@map("notifications")
+  }
+
+  /// Represents a clinic service
+  model Service {
+    id          String   @id @default(cuid())
+    name        String   @unique
+    doctor_name String   // Legacy field, kept for display sync
+    created_at  DateTime @default(now())
+
+    // New strict relationship: one doctor per service
+    assigned_doctor_id String? @unique
+    assignedDoctor     User?   @relation(fields: [assigned_doctor_id], references: [id], onDelete: SetNull)
+
+    disabledSlots DisabledSlot[]
+    
+    @@map("services")
+  }
+
+  /// Represents a specific generated time slot for a service and date that has been manually disabled
+  model DisabledSlot {
+    id          String   @id @default(cuid())
+    date        DateTime @db.Date
+    time_slot   String
+    created_at  DateTime @default(now())
+
+    service_id  String
+    service     Service  @relation(fields: [service_id], references: [id], onDelete: Cascade)
+
+    @@unique([date, service_id, time_slot])
+    @@map("disabled_slots")
+  }
+
+  /// Represents the Individual Treatment Record
+  model ITR {
+    id                  String   @id @default(cuid())
+    patientId           String   @unique
+    patient             User     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+    
+    // Basic Info (Updatable part)
+    familySerialNumber  String?
+    familyCode          String?
+    bloodType           String?
+    
+    philhealthNumber    String?
+    memberType          String? 
+    clientType          Json? 
+
+    // Philhealth Dependent Info
+    dependentLastName   String?
+    dependentFirstName  String?
+    dependentMiddleName String?
+    dependentPin        String?
+    dependentBirthday   DateTime? @db.Date
+    dependentMaritalStatus String?
+    dependentSex        String?
+
+    // Vital Signs
+    bloodPressure       String?
+    temperature         String?
+    heartRate           String?
+    respiratoryRate     String?
+    o2Sat               String?
+    heightCm            Float?
+    weightKg            Float?
+    lengthCm            Float? 
+    weightKg2yo         Float? 
+    muac                Float? 
+
+    // Chief Complaints
+    chiefComplaints     Json? 
+    otherComplaints     String?
+    medicationsTaken    Boolean @default(false)
+    medicationsSpec     String?
+    prescriptionRefill  Boolean @default(false)
+    prescriptionSpec    String?
+
+    // Past Medical History
+    pastMedicalHistory  Json? 
+    hospitalizationSpec String?
+    allergiesSpec       String?
+    pastMedicalOthers   String?
+
+    // Family History
+    familyHistory       Json? 
+    familyHistoryOthers String?
+
+    // Surgical History
+    hadSurgery          Boolean @default(false)
+    surgeryName         String?
+    surgeryDate         DateTime? @db.Date
+
+    // Personal Social History
+    alcohol             Boolean @default(false)
+    smoking             Boolean @default(false)
+    illicitDrugs        Boolean @default(false)
+    sexuallyActive      Boolean @default(false)
+
+    // OB-Gyne History
+    lastMenstrualPeriod DateTime? @db.Date
+    menstrualCycle      String? 
+    menstrualRemarks    String?
+
+    // Immunization
+    immunizationNotes   String?
+
+    // Status
+    isCompleted         Boolean @default(false)
+    
+    createdAt           DateTime @default(now())
+    updatedAt           DateTime @updatedAt
+    
+    history             ITRHistory[]
+
+    @@map("itrs")
+  }
+
+  /// Represents a change history record for an ITR
+  model ITRHistory {
+    id              String   @id @default(cuid())
+    itrId           String
+    itr             ITR      @relation(fields: [itrId], references: [id], onDelete: Cascade)
+    changedFields   Json     
+    oldValues       Json     
+    newValues       Json     
+    updatedAt       DateTime @default(now())
+
+    @@map("itr_history")
+  }
+
+  /// Stores runtime configuration like clinic hours
+  model ClinicConfig {
+    key       String   @id
+    value     Json
+    updatedAt DateTime @updatedAt
+    updatedBy String   // admin user id
+
+    @@map("clinic_configs")
+  }

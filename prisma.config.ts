@@ -10,7 +10,8 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    // Runtime queries go through Supabase connection pooler (Supavisor)
-    url: process.env["DATABASE_URL"],
+    // The Prisma CLI requires the Direct URL (port 5432) for running migrations.
+    // (Your Next.js app will still use DATABASE_URL via the PrismaClient constructor)
+    url: process.env["DIRECT_URL"],
   },
 });
