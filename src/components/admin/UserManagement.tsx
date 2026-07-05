@@ -84,6 +84,23 @@ export function UserManagement() {
   const [serviceDoctorMap, setServiceDoctorMap] = useState<Record<string, { doctorId: string; doctorName: string } | null>>({});
   const [loadingUsers, setLoadingUsers] = useState(true);
 
+  // Pagination & Search state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch]);
+
   // Modals state
   const [editUser, setEditUser] = useState<UserRecord | null>(null);
   const [deleteUser, setDeleteUser] = useState<UserRecord | null>(null);
@@ -103,13 +120,15 @@ export function UserManagement() {
     if (!isBackground) setLoadingUsers(true);
     try {
       const [resUsers, svcs, svcDocMap] = await Promise.all([
-        fetch("/api/admin/users"),
+        fetch(`/api/admin/users?page=${currentPage}&limit=10&search=${encodeURIComponent(debouncedSearch)}`),
         getServices(),
         getServiceDoctorMap(),
       ]);
 
       if (resUsers.ok) {
-        setUsers(await resUsers.json());
+        const data = await resUsers.json();
+        setUsers(data.users || []);
+        setTotalPages(data.totalPages || 1);
       } else if (!isBackground) {
         toast.error("Failed to load users");
       }
@@ -120,13 +139,13 @@ export function UserManagement() {
     } finally {
       if (!isBackground) setLoadingUsers(false);
     }
-  }, []);
+  }, [currentPage, debouncedSearch]);
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(() => {
       fetchData(true);
-    }, 10000);
+    }, 30000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
@@ -478,23 +497,31 @@ export function UserManagement() {
 
       {/* ── User List ───────────────────────────────────────────────────── */}
       <Card className="bg-white/60 backdrop-blur-md shadow-lg border-slate-200/60">
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <CardTitle>All Staff &amp; Doctors</CardTitle>
             <CardDescription>
-              {users.length} registered user{users.length !== 1 && "s"}
+              Manage registered users
             </CardDescription>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchData()}
-            disabled={loadingUsers}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className={`w-4 h-4 ${loadingUsers ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+            <Input
+              placeholder="Search name or email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full sm:w-64"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchData()}
+              disabled={loadingUsers}
+              className="flex items-center gap-2 w-full sm:w-auto"
+            >
+              <RefreshCw className={`w-4 h-4 ${loadingUsers ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {loadingUsers ? (
@@ -555,6 +582,33 @@ export function UserManagement() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+          
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <div className="text-sm text-slate-500">
+                Page {currentPage} of {totalPages}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage <= 1 || loadingUsers}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage >= totalPages || loadingUsers}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                >
+                  Next
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

@@ -28,7 +28,7 @@ export function AdminDashboardClient({ analyticsData }: AdminDashboardClientProp
   useEffect(() => {
     const interval = setInterval(() => {
       router.refresh();
-    }, 10000);
+    }, 30000); // Increased polling interval to 30 seconds to mitigate server load
     return () => clearInterval(interval);
   }, [router]);
 
