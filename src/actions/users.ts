@@ -5,16 +5,36 @@ import bcrypt from 'bcryptjs';
 import { verifySession } from '@/lib/session';
 import { createAuditLog } from '@/lib/audit';
 
-export async function getStaffAndDoctors() {
+export async function getStaffAndDoctors(page = 1, limit = 10, search = "") {
   const session = await verifySession();
   if (!session || session.role !== 'ADMIN') throw new Error('Unauthorized');
 
+  const whereCondition: any = {
+    role: { in: ['STAFF', 'DOCTOR'] }
+  };
+
+  if (search) {
+    whereCondition.OR = [
+      { name: { contains: search, mode: 'insensitive' } },
+      { email: { contains: search, mode: 'insensitive' } },
+    ];
+  }
+
+  const totalCount = await prisma.user.count({ where: whereCondition });
+
   const users = await prisma.user.findMany({
-    where: { role: { in: ['STAFF', 'DOCTOR'] } },
+    where: whereCondition,
     include: { assignedService: true },
     orderBy: { created_at: 'desc' },
+    skip: (page - 1) * limit,
+    take: limit,
   });
-  return users;
+
+  return {
+    users,
+    totalCount,
+    totalPages: Math.ceil(totalCount / limit)
+  };
 }
 
 export async function createStaffOrDoctor(data: {
@@ -171,33 +191,40 @@ export async function deleteUser(id: string) {
   }
   const actorId = session.userId;
 
-  return await prisma.$transaction(async (tx) => {
-    const user = await tx.user.findUnique({
-      where: { id },
-      include: { assignedService: true },
-    });
-
-    if (user?.role === 'DOCTOR' && user.assignedService) {
-      await tx.service.update({
-        where: { id: user.assignedService.id },
-        data: {
-          assigned_doctor_id: null,
-          doctor_name: 'Unassigned',
-        },
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id },
+        include: { assignedService: true },
       });
+
+      if (user?.role === 'DOCTOR' && user.assignedService) {
+        await tx.service.update({
+          where: { id: user.assignedService.id },
+          data: {
+            assigned_doctor_id: null,
+            doctor_name: 'Unassigned',
+          },
+        });
+      }
+
+      const deletedUser = await tx.user.delete({
+        where: { id },
+      });
+
+      await createAuditLog(tx, actorId, 'DELETE_USER', 'User', id, {
+        email: deletedUser.email,
+        role: deletedUser.role
+      });
+
+      return deletedUser;
+    });
+  } catch (error: any) {
+    if (error.code === 'P2003') {
+      throw new Error('Cannot delete user: This account has associated medical records or audit logs.');
     }
-
-    const deletedUser = await tx.user.delete({
-      where: { id },
-    });
-
-    await createAuditLog(tx, actorId, 'DELETE_USER', 'User', id, {
-      email: deletedUser.email,
-      role: deletedUser.role
-    });
-
-    return deletedUser;
-  });
+    throw error;
+  }
 }
 
 export async function getServiceDoctorMap() {

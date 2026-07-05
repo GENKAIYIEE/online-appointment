@@ -4,15 +4,20 @@ import { verifySession } from "@/lib/session";
 import { getStaffAndDoctors, createStaffOrDoctor } from "@/actions/users";
 
 // GET /api/admin/users — list all staff & doctor accounts. Requires ADMIN role.
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const session = await verifySession();
     if (!session || session.role !== "ADMIN") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const users = await getStaffAndDoctors();
-    return NextResponse.json(users);
+    const { searchParams } = new URL(req.url);
+    const page = parseInt(searchParams.get("page") || "1", 10);
+    const limit = parseInt(searchParams.get("limit") || "10", 10);
+    const search = searchParams.get("search") || "";
+
+    const result = await getStaffAndDoctors(page, limit, search);
+    return NextResponse.json(result);
   } catch (error) {
     console.error("[admin/users] GET error:", error);
     return NextResponse.json({ error: "Failed to fetch users" }, { status: 500 });

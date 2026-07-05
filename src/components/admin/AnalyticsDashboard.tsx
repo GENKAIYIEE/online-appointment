@@ -14,15 +14,13 @@ import {
 import {
   Users,
   Activity,
-  ArrowUpRight,
-  ArrowDownRight,
-  ArrowRight,
   Monitor,
   PersonStanding,
-  PlusCircle,
+  Clock,
+  User,
+  CheckCircle2,
   XCircle,
   MessageSquareQuote,
-  Quote,
 } from "lucide-react";
 import {
   Card,
@@ -95,6 +93,34 @@ function useCountUp(end: number, duration: number = 1000) {
   return count;
 }
 
+function KPICard({ kpi }: { kpi: any }) {
+  const animatedValue = useCountUp(kpi.value);
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+  return (
+    <Card
+      className={`border-y border-r border-l-4 ${kpi.accent} shadow-sm overflow-hidden relative group hover:-translate-y-1 hover:shadow-lg transition-all duration-300 bg-white`}
+    >
+      <div className="absolute inset-0 bg-gradient-to-br from-white to-slate-50 opacity-50" />
+      <CardHeader className="flex flex-row items-center justify-between pb-2 relative z-10">
+        <CardTitle className="text-sm font-semibold text-slate-600">
+          {kpi.title}
+        </CardTitle>
+        <div className={`p-2.5 rounded-xl ${kpi.bg}`}>{kpi.icon}</div>
+      </CardHeader>
+      <CardContent className="relative z-10 pt-2">
+        <div className="text-4xl font-bold text-slate-900 tracking-tight">
+          {animatedValue.toLocaleString()}
+        </div>
+        <div className="flex items-center mt-3 text-sm text-slate-500 font-medium">
+          Today, {dateStr}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export function AnalyticsDashboard({ data }: { data: AnalyticsData }) {
   const { stats, chartData, recentActivity } = data;
@@ -134,40 +160,13 @@ export function AnalyticsDashboard({ data }: { data: AnalyticsData }) {
     },
   ];
 
-  const now = new Date();
-  const dateStr = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
   return (
     <div className="space-y-8 pb-12">
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        {kpis.map((kpi, index) => {
-          // eslint-disable-next-line react-hooks/rules-of-hooks
-          const animatedValue = useCountUp(kpi.value);
-
-          return (
-            <Card
-              key={index}
-              className={`border-y border-r border-l-4 ${kpi.accent} shadow-sm overflow-hidden relative group hover:-translate-y-1 hover:shadow-lg transition-all duration-300 bg-white`}
-            >
-              <div className="absolute inset-0 bg-gradient-to-br from-white to-slate-50 opacity-50" />
-              <CardHeader className="flex flex-row items-center justify-between pb-2 relative z-10">
-                <CardTitle className="text-sm font-semibold text-slate-600">
-                  {kpi.title}
-                </CardTitle>
-                <div className={`p-2.5 rounded-xl ${kpi.bg}`}>{kpi.icon}</div>
-              </CardHeader>
-              <CardContent className="relative z-10 pt-2">
-                <div className="text-4xl font-bold text-slate-900 tracking-tight">
-                  {animatedValue.toLocaleString()}
-                </div>
-                <div className="flex items-center mt-3 text-sm text-slate-500 font-medium">
-                  Today, {dateStr}
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+        {kpis.map((kpi, index) => (
+          <KPICard key={index} kpi={kpi} />
+        ))}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">

@@ -84,11 +84,12 @@ export async function getAdminAnalytics(): Promise<AnalyticsData> {
             SUM(CASE WHEN type = 'WALK_IN' AND created_at >= ${days[5].start} AND created_at < ${days[5].end} THEN 1 ELSE 0 END)::int AS "walkin_d5",
             SUM(CASE WHEN type = 'WALK_IN' AND created_at >= ${days[6].start} AND created_at < ${days[6].end} THEN 1 ELSE 0 END)::int AS "walkin_d6"
           FROM appointments
+          WHERE created_at >= ${days[6].start} AND created_at < ${tomorrow}
         ),
         user_kpi AS (
           SELECT
-            SUM(CASE WHEN role = 'STAFF'                                                                          THEN 1 ELSE 0 END)::int AS "staffNow",
-            SUM(CASE WHEN role = 'STAFF'   AND created_at < ${today}                                              THEN 1 ELSE 0 END)::int AS "staffYesterday",
+            SUM(CASE WHEN role IN ('STAFF', 'DOCTOR')                                                                          THEN 1 ELSE 0 END)::int AS "staffNow",
+            SUM(CASE WHEN role IN ('STAFF', 'DOCTOR')   AND created_at < ${today}                                              THEN 1 ELSE 0 END)::int AS "staffYesterday",
             SUM(CASE WHEN role = 'PATIENT' AND created_at >= ${today}     AND created_at < ${tomorrow}            THEN 1 ELSE 0 END)::int AS "patientsToday",
             SUM(CASE WHEN role = 'PATIENT' AND created_at >= ${yesterday} AND created_at < ${today}               THEN 1 ELSE 0 END)::int AS "patientsYesterday"
           FROM users

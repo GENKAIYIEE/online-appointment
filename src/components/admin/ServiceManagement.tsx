@@ -62,9 +62,13 @@ export function ServiceManagement() {
         const svcs = await svcRes.json();
         const usrs = await usrRes.json();
         
-        setServices(svcs);
+        // Handle both raw array and paginated { users: [...] } response shapes
+        const serviceList = Array.isArray(svcs) ? svcs : (svcs.services ?? []);
+        const userList = Array.isArray(usrs) ? usrs : (usrs.users ?? []);
+        
+        setServices(serviceList);
         // Filter only doctors
-        setDoctors(usrs.filter((u: User) => u.role === "DOCTOR"));
+        setDoctors(userList.filter((u: User) => u.role === "DOCTOR"));
       } else if (!isBackground) {
         toast.error("Failed to load data");
       }
