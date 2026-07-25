@@ -41,6 +41,9 @@ export async function POST(req: Request) {
       data: { password: hashedPassword },
     });
 
+    const { logAction } = await import("@/lib/audit");
+    await logAction("UPDATE_ADMIN_PASSWORD", "User", session.userId, {}, session.name || session.userId);
+
     return NextResponse.json({ success: true, message: "Password updated successfully" });
   } catch (error) {
     console.error("Password update error:", error);

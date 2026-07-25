@@ -94,6 +94,7 @@ export default async function PatientDashboard() {
       where: {
         user_id: patientId,
         status: "CONFIRMED",
+        isArchived: false,
         schedule: {
           date: {
             gte: today,
@@ -124,6 +125,7 @@ export default async function PatientDashboard() {
         where: {
           user_id: patientId,
           status: "COMPLETED",
+          isArchived: false,
           OR: [
             { consultationDiagnosis: { not: null } },
             { consultationNotes: { not: null } }

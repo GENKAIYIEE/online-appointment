@@ -168,11 +168,11 @@ export function SlotManagementClient({ services }: { services: Service[] }) {
 
         {/* TOP FILTERS BAR */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between mb-6 flex-shrink-0">
-          <div className="flex items-center gap-4 w-full md:w-auto">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto">
             <select 
               value={selectedServiceId} 
               onChange={(e) => setSelectedServiceId(e.target.value)} 
-              className="w-full md:w-48 px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all font-medium text-slate-700"
+              className="w-full sm:w-auto md:w-48 px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all font-medium text-slate-700"
             >
               {services.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
             </select>
@@ -195,25 +195,28 @@ export function SlotManagementClient({ services }: { services: Service[] }) {
             
             <button 
               onClick={handleToday}
-              className="px-4 py-2 bg-white border border-[#16a34a] text-[#16a34a] text-sm font-semibold rounded-lg hover:bg-green-50 transition-colors"
+              className="w-full sm:w-auto px-4 py-2 bg-white border border-[#16a34a] text-[#16a34a] text-sm font-semibold rounded-lg hover:bg-green-50 transition-colors"
             >
               Today
             </button>
           </div>
 
-          <div className="flex items-center gap-3 text-xs font-medium text-slate-600 ml-auto whitespace-nowrap overflow-x-auto pb-1 md:pb-0">
+          <div className="flex items-center gap-3 text-[11px] sm:text-xs font-medium text-slate-600 ml-auto whitespace-nowrap overflow-x-auto pb-1 md:pb-0 no-scrollbar max-w-full">
             <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100"><div className="w-2 h-2 rounded-full bg-[#16a34a]" /> Available</div>
             <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100"><div className="w-2 h-2 rounded-full bg-[#D97706]" /> Partially Booked</div>
             <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100"><div className="w-2 h-2 rounded-full bg-[#EF4444]" /> Fully Booked</div>
+            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100"><div className="w-2 h-2 rounded-full bg-amber-500" /> On Leave</div>
             <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100"><div className="w-2 h-2 rounded-full bg-[#D1D5DB]" /> Closed</div>
           </div>
         </div>
 
         {/* CALENDAR CANVAS */}
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="grid grid-cols-7 border-b border-[#E5E7EB] bg-[#F9FAFB]">
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(day => (
-              <div key={day} className="py-3 text-center text-[13px] font-semibold text-[#6B7280] uppercase tracking-wider border-r border-[#E5E7EB] last:border-r-0">
+          <div className="overflow-x-auto w-full no-scrollbar">
+            <div className="min-w-[600px] sm:min-w-0">
+              <div className="grid grid-cols-7 border-b border-[#E5E7EB] bg-[#F9FAFB]">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(day => (
+                  <div key={day} className="py-2 sm:py-3 text-center text-[11px] sm:text-[13px] font-semibold text-[#6B7280] uppercase tracking-wider border-r border-[#E5E7EB] last:border-r-0">
                 {day}
               </div>
             ))}
@@ -233,7 +236,7 @@ export function SlotManagementClient({ services }: { services: Service[] }) {
               
               const isPast = day < new Date(new Date().setHours(0,0,0,0));
               
-              const dayData = summaryData.find(d => d.date === dateStr);
+              const daySummary = summaryData.find(d => d.date === dateStr);
               
               // Determine cell styling
               let cellBg = "bg-white";
@@ -245,36 +248,37 @@ export function SlotManagementClient({ services }: { services: Service[] }) {
               } else if (isPast || isClosed) {
                 isClosedStyle = true;
                 cellBg = "bg-[#F9FAFB]";
-                content = <div className="text-[12px] font-medium text-[#D1D5DB] mt-4 text-center">Closed</div>;
+                content = <div className="text-[10px] sm:text-[12px] font-medium text-[#D1D5DB] mt-4 text-center">Closed</div>;
               } else {
                 if (isFetchingMonth) {
                   content = <div className="w-[80%] mx-auto h-6 bg-slate-100 animate-pulse rounded-full mt-3" />;
-                } else if (dayData) {
-                  const { available, total } = dayData;
-                  let badgeBg, badgeText, badgeBorder;
-
-                  if (available === total) {
-                    badgeBg = "bg-[#F0FDF4]"; badgeText = "text-[#16a34a]"; badgeBorder = "border-[#bbf7d0]";
-                  } else if (available === 0) {
-                    badgeBg = "bg-[#FEF2F2]"; badgeText = "text-[#EF4444]"; badgeBorder = "border-[#FECACA]";
-                  } else {
-                    badgeBg = "bg-[#FFFBEB]"; badgeText = "text-[#D97706]"; badgeBorder = "border-[#FDE68A]";
-                  }
+                } else if (daySummary) {
+                  const { available, total, isLeave } = daySummary;
                   
                   content = (
                     <div className="flex justify-center mt-3">
                       <div className={cn(
-                        "rounded-[20px] px-[12px] py-[4px] text-[12px] font-medium border",
-                        badgeBg, badgeText, badgeBorder
+                        "rounded-[20px] px-2 sm:px-[12px] py-[2px] sm:py-[4px] text-[10px] sm:text-[12px] font-medium border text-center leading-tight",
+                        isLeave
+                          ? "bg-amber-50 text-amber-600 border-amber-200"
+                          : available === 0 
+                            ? "bg-[#FEF2F2] text-[#EF4444] border-[#FECACA]" 
+                            : available === total
+                              ? "bg-[#F0FDF4] text-[#16A34A] border-[#BBF7D0]"
+                              : "bg-[#FFFBEB] text-[#D97706] border-[#FDE68A]"
                       )}>
-                        {available === 0 ? "Fully Booked" : `${available} / ${total} available`}
+                        {isLeave 
+                          ? "Doctor is on leave"
+                          : available === 0 
+                            ? "Fully Booked" 
+                            : `${available} / ${total} available`}
                       </div>
                     </div>
                   );
                 } else {
                    content = (
                     <div className="flex justify-center mt-3">
-                      <div className="rounded-[20px] px-[12px] py-[4px] text-[12px] font-medium text-[#9CA3AF]">
+                      <div className="rounded-[20px] px-2 sm:px-[12px] py-[2px] sm:py-[4px] text-[10px] sm:text-[12px] font-medium text-[#9CA3AF] text-center leading-tight">
                         18 / 18 available
                       </div>
                     </div>
@@ -306,6 +310,8 @@ export function SlotManagementClient({ services }: { services: Service[] }) {
                 </div>
               );
             })}
+          </div>
+            </div>
           </div>
         </div>
       </div>

@@ -57,6 +57,9 @@ export async function POST(req: Request) {
     // Update session with new name and email
     await createSession(updatedUser.id, updatedUser.role, updatedUser.name, updatedUser.email!);
 
+    const { logAction } = await import("@/lib/audit");
+    await logAction("UPDATE_ADMIN_PROFILE", "User", session.userId, { newEmail: email, newName: name }, session.name || session.userId);
+
     return NextResponse.json({ success: true, message: "Profile updated successfully", user: { name: updatedUser.name, email: updatedUser.email } });
   } catch (error) {
     console.error("Profile update error:", error);

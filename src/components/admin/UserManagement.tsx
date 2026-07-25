@@ -278,6 +278,8 @@ export function UserManagement() {
     try {
       const payload: any = {
         name: editUser.name.trim(),
+        email: editUser.email?.trim(),
+        role: editUser.role,
         phone: editUser.phone?.trim() || null,
         assignedServiceId: editUser.role === "DOCTOR" ? editUser.assignedService?.id : undefined,
         forceReassign
@@ -621,7 +623,7 @@ export function UserManagement() {
           setOverrideMode(null);
         }
       }}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Reassign Service?</DialogTitle>
             <DialogDescription>
@@ -649,11 +651,11 @@ export function UserManagement() {
 
       {/* ── Edit Modal ──────────────────────────────────────────────────── */}
       <Dialog open={!!editUser} onOpenChange={(o) => !o && closeEditModal()}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Edit User</DialogTitle>
             <DialogDescription>
-              Update information for {editUser?.name}. Role and Email cannot be changed.
+              Update information for {editUser?.name}.
             </DialogDescription>
           </DialogHeader>
           {editUser && (
@@ -661,6 +663,34 @@ export function UserManagement() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Name</label>
                 <Input value={editUser.name} onChange={e => setEditUser({...editUser, name: e.target.value})} required />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Email</label>
+                <Input type="email" value={editUser.email || ""} onChange={e => setEditUser({...editUser, email: e.target.value})} required />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Role</label>
+                <Select 
+                  value={editUser.role} 
+                  onValueChange={(v) => {
+                    const newRole = v as "STAFF" | "DOCTOR";
+                    setEditUser({
+                      ...editUser, 
+                      role: newRole,
+                      assignedService: newRole === "STAFF" ? null : editUser.assignedService
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select role">
+                      {editUser.role === "STAFF" ? "Staff" : "Doctor"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="STAFF">Staff</SelectItem>
+                    <SelectItem value="DOCTOR">Doctor</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Phone</label>
@@ -753,7 +783,7 @@ export function UserManagement() {
 
       {/* ── Delete Confirmation Modal ───────────────────────────────────── */}
       <Dialog open={!!deleteUser} onOpenChange={(o) => !o && setDeleteUser(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Delete User</DialogTitle>
             <DialogDescription>

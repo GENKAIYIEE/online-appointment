@@ -25,6 +25,7 @@ type QueueItem = {
   time: string;
   type: string;
   status: string;
+  room: string | null;
   scheduleDate: string;
 };
 
@@ -164,6 +165,7 @@ export function DoctorConsoleClient({
   const renderPatientCard = (patient: QueueItem, showDate = false) => {
     const isCompleted = patient.status === "COMPLETED";
     const isNoShow = patient.status === "NO_SHOW";
+    const isServing = patient.room === doctorId;
     const isDone = isCompleted || isNoShow;
 
     return (
@@ -233,6 +235,18 @@ export function DoctorConsoleClient({
             <div className="bg-blue-50 border border-blue-100 text-blue-600 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wide text-center">
               Upcoming
             </div>
+          ) : isServing ? (
+            <>
+              <div className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wide text-center hidden sm:block shadow-sm">
+                Now Serving
+              </div>
+              <button
+                onClick={() => setNoShowAppt(patient)}
+                className="px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 flex-1 sm:flex-none bg-white border-2 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
+              >
+                No Show
+              </button>
+            </>
           ) : (
             <>
               <div className="bg-amber-100 text-amber-700 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wide text-center hidden sm:block">

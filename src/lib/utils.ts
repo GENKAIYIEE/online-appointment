@@ -78,3 +78,39 @@ export function getTodayPHT(): Date {
   // Return exactly 00:00:00 UTC to match Prisma @db.Date strict boundaries
   return new Date(`${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00Z`);
 }
+
+/**
+ * Returns true if the given time slot (e.g. "08:00 AM") has already passed
+ * relative to the current Manila time.
+ * Note: Caller must check if the target date is "today" before calling this.
+ */
+export function isTimeSlotPassedPHT(slotTimeStr: string): boolean {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false
+  });
+  
+  const parts = formatter.formatToParts(now);
+  const getPart = (type: string) => parts.find(p => p.type === type)?.value;
+  
+  const phtHour = parseInt(getPart('hour') || '0', 10);
+  const phtMinute = parseInt(getPart('minute') || '0', 10);
+
+  const match = slotTimeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!match) return false;
+  
+  let slotHour = parseInt(match[1], 10);
+  const slotMin = parseInt(match[2], 10);
+  const isPM = match[3].toUpperCase() === "PM";
+  
+  if (isPM && slotHour < 12) slotHour += 12;
+  if (!isPM && slotHour === 12) slotHour = 0;
+
+  if (slotHour < phtHour) return true;
+  if (slotHour === phtHour && slotMin <= phtMinute) return true;
+  
+  return false;
+}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -22,7 +23,11 @@ const formSchema = z.object({
   phone: z.string().min(10, "Valid contact number is required"),
   address: z.string().min(5, "Complete address is required"),
   email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  password: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[a-z]/, "Must contain at least one lowercase letter")
+    .regex(/[A-Z]/, "Must contain at least one uppercase letter")
+    .regex(/[0-9]/, "Must contain at least one number"),
   confirmPassword: z.string(),
   terms: z.boolean().refine((val) => val === true, "You must agree to the terms"),
 }).refine((data) => data.password === data.confirmPassword, {
@@ -41,11 +46,26 @@ export default function RegisterPage() {
     register,
     handleSubmit,
     trigger,
+    watch,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: { terms: false },
   });
+
+  const passwordValue = watch("password", "");
+
+  const calculateStrength = (pwd: string) => {
+    let score = 0;
+    if (pwd.length >= 8) score += 1;
+    if (/[a-z]/.test(pwd)) score += 1;
+    if (/[A-Z]/.test(pwd)) score += 1;
+    if (/[0-9]/.test(pwd)) score += 1;
+    if (/[^A-Za-z0-9]/.test(pwd)) score += 1;
+    return score;
+  };
+
+  const strengthScore = calculateStrength(passwordValue);
 
   const nextStep = async () => {
     const fieldsToValidate: any[] = [
@@ -90,8 +110,8 @@ export default function RegisterPage() {
         <div className="absolute bottom-[-10%] right-[-10%] w-[600px] h-[600px] rounded-full bg-emerald-700/40 blur-3xl mix-blend-screen" />
         
         <div className="relative z-10 flex-1">
-          <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg mb-10">
-            <Stethoscope className="text-green-600 w-7 h-7" />
+          <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg mb-10 overflow-hidden">
+            <Image src="/rhu1.png" alt="RHU Logo" width={64} height={64} className="w-full h-full object-contain scale-125" />
           </div>
           <h1 className="text-4xl font-extrabold text-white tracking-tight leading-tight mb-4">
             Your health,<br />our priority.
@@ -204,7 +224,35 @@ export default function RegisterPage() {
                 <div className="space-y-2">
                   <Label className="text-slate-700 font-bold">Password</Label>
                   <Input type="password" {...register("password")} placeholder="Create a password" className={errors.password ? 'border-red-500' : ''} />
-                  {errors.password && <p className="text-red-500 text-xs">{errors.password.message}</p>}
+                  
+                  {/* Password Strength Indicator */}
+                  <div className="flex gap-1 mt-1.5">
+                    {[1, 2, 3, 4, 5].map((level) => (
+                      <div
+                        key={level}
+                        className={`h-1.5 w-full rounded-full transition-all duration-300 ${
+                          strengthScore >= level
+                            ? strengthScore < 3
+                              ? "bg-red-500"
+                              : strengthScore < 5
+                              ? "bg-yellow-500"
+                              : "bg-green-500"
+                            : "bg-slate-200"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">
+                    {strengthScore === 0 
+                      ? "Password strength" 
+                      : strengthScore < 3 
+                        ? <span className="text-red-500">Weak: Needs uppercase, lowercase, & numbers</span>
+                        : strengthScore < 5 
+                          ? <span className="text-yellow-600">Good: Add a special symbol to make it stronger</span>
+                          : <span className="text-green-600">Strong: Great password!</span>}
+                  </p>
+
+                  {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>}
                 </div>
 
                 <div className="space-y-2">

@@ -54,7 +54,7 @@ export async function getDoctorSummaryCards(doctorId: string) {
 
     console.log("[DoctorSummary] appointments found:", appointments.length);
 
-    const waiting = appointments.filter((a) => (a as any).status === "CONFIRMED" || (a as any).status === "PENDING").length; // PENDING included just in case
+    const waiting = appointments.filter((a) => a.status === "CONFIRMED").length;
     const completed = appointments.filter((a) => a.status === "COMPLETED").length;
     const noShow = appointments.filter((a) => a.status === "NO_SHOW").length;
     const totalPatients = appointments.length - noShow;
@@ -96,8 +96,11 @@ export async function getDoctorQueue(doctorId: string) {
         user: {
           include: { itr: true },
         },
+        subProfile: {
+          include: { itr: true },
+        },
         walkInPatient: true,
-        schedule: true, // ← include so we can read the actual date
+        schedule: true,
       },
       orderBy: [
         { schedule: { date: "asc" } },
@@ -121,6 +124,10 @@ export async function getDoctorQueue(doctorId: string) {
       if (appt.type === "WALK_IN" && appt.walkInPatient) {
         patientName = appt.walkInPatient.fullName;
         age = appt.walkInPatient.age;
+      } else if (appt.subProfile) {
+        // Dual Context for Family Members
+        patientName = `${appt.subProfile.firstName} ${appt.subProfile.lastName} (Dependent of: ${appt.user?.name || 'Unknown'})`;
+        age = getAge(appt.subProfile.birthday);
       } else {
         patientName = appt.user?.name || "Unknown Patient";
         age = getAge(appt.user?.birthday);
@@ -145,6 +152,7 @@ export async function getDoctorQueue(doctorId: string) {
         time: appt.time_slot || "N/A",
         type: appt.type,
         status: appt.status,
+        room: appt.room,
         // ✅ Pass the actual appointment date (from schedule)
         scheduleDate: appt.schedule.date.toISOString(),
       };
@@ -199,19 +207,27 @@ export async function markAsServing(appointmentId: string, doctorId: string) {
     // Let's just set the `room` field to "SERVING" for the active one, and clear it for others.
     
     await prisma.$transaction(async (tx) => {
-      // Clear previous
+      // Validate appointment state
+      const appointment = await tx.appointment.findUnique({
+        where: { id: appointmentId },
+        select: { status: true },
+      });
+      
+      if (!appointment) throw new Error("Appointment not found");
+      if (appointment.status !== "CONFIRMED") {
+        throw new Error("Only confirmed appointments can be marked as serving.");
+      }
+
+      // Clear previous for this specific doctor
       await tx.appointment.updateMany({
-        where: {
-          service: doctor.assignedService?.name || doctor.name, // fallback
-          room: "SERVING",
-        },
+        where: { room: doctorId },
         data: { room: null },
       });
 
       // Set new
       await tx.appointment.update({
         where: { id: appointmentId },
-        data: { room: "SERVING" },
+        data: { room: doctorId },
       });
     });
 
@@ -238,10 +254,7 @@ export async function clearServing(doctorId: string) {
     if (!doctor) return { success: false };
 
     await prisma.appointment.updateMany({
-      where: {
-        service: doctor.assignedService?.name || doctor.name,
-        room: "SERVING",
-      },
+      where: { room: doctorId },
       data: { room: null },
     });
     revalidatePath("/dashboard/doctor");
@@ -289,6 +302,16 @@ export async function saveConsultation(appointmentId: string, data: {
     const doctorName = doctor?.name || "Your Doctor";
 
     await prisma.$transaction(async (tx) => {
+      const appointment = await tx.appointment.findUnique({
+        where: { id: appointmentId },
+        select: { status: true },
+      });
+
+      if (!appointment) throw new Error("Appointment not found.");
+      if (appointment.status === "CANCELLED" || appointment.status === "NO_SHOW") {
+        throw new Error(`Cannot save consultation. Appointment is already ${appointment.status}.`);
+      }
+
       const followUp = data.followUpDate ? new Date(data.followUpDate) : null;
       const now = new Date();
 
@@ -347,6 +370,11 @@ export async function saveConsultation(appointmentId: string, data: {
           // We'll embed a prefix in the message if needed, but standard string is fine.
         }
       });
+
+      // Notify Staff
+      const { createStaffNotification } = await import("@/lib/notifications");
+      await createStaffNotification(`Consultation completed by ${doctorName} for appointment ID: ${appointmentId}`, appointmentId);
+
     });
 
     revalidatePath("/dashboard/doctor");
@@ -367,8 +395,9 @@ export async function getConsultationHistory(
     service?: string;
     type?: string;
   },
-  cursor?: string,
-  limit: number = 10
+  page: number = 1,
+  limit: number = 10,
+  isExport: boolean = false
 ) {
   try {
     const doctor = await prisma.user.findUnique({ 
@@ -376,7 +405,7 @@ export async function getConsultationHistory(
       include: { assignedService: true }
     });
     if (!doctor) throw new Error("Doctor not found");
-    if (!doctor.assignedService) return { data: [], nextCursor: null };
+    if (!doctor.assignedService) return { data: [], total: 0, totalPages: 0, page: 1 };
 
     let whereClause: any = {
       service: doctor.assignedService.name,
@@ -410,10 +439,11 @@ export async function getConsultationHistory(
       ];
     }
 
-    const safeLimit = Math.min(limit, 50);
+    const safeLimit = isExport ? limit : Math.min(limit, 50);
+    const skip = (page - 1) * safeLimit;
 
-    const fetchPage = async (currentCursor?: string) => {
-      const queryOptions: any = {
+    const [appointments, total] = await Promise.all([
+      prisma.appointment.findMany({
         where: whereClause,
         include: {
           user: { include: { itr: true } },
@@ -421,38 +451,23 @@ export async function getConsultationHistory(
           consultation: true,
         },
         orderBy: { created_at: "desc" },
-        take: safeLimit + 1, // Fetch one extra to determine if there's a next page
-      };
+        skip,
+        take: safeLimit,
+      }),
+      prisma.appointment.count({ where: whereClause })
+    ]);
 
-      if (currentCursor) {
-        queryOptions.cursor = { id: currentCursor };
-        queryOptions.skip = 1;
-      }
+    const totalPages = Math.ceil(total / safeLimit);
 
-      return await prisma.appointment.findMany(queryOptions);
+    return { 
+      data: appointments, 
+      total, 
+      totalPages, 
+      page 
     };
-
-    let appointments: any[] = [];
-    try {
-      appointments = await fetchPage(cursor);
-    } catch (error: any) {
-      if (cursor) {
-        appointments = await fetchPage();
-      } else {
-        throw error;
-      }
-    }
-
-    let nextCursor: string | null = null;
-    if (appointments.length > safeLimit) {
-      const nextItem = appointments.pop();
-      nextCursor = nextItem.id;
-    }
-
-    return { data: appointments, nextCursor };
-  } catch (error) {
-    console.error("Error fetching history:", error);
-    return { data: [], nextCursor: null };
+  } catch (error: any) {
+    console.error("Error fetching consultation history:", error);
+    return { data: [], total: 0, totalPages: 0, page: 1 };
   }
 }
 

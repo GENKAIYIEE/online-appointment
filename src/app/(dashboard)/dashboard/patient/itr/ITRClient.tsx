@@ -2,17 +2,19 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { differenceInYears, differenceInMonths, format } from "date-fns";
 import { toast } from "sonner";
-import { Save, FileEdit, CheckCircle2 } from "lucide-react";
+import { Save, FileEdit, CheckCircle2, User, ArrowLeft } from "lucide-react";
 import { saveITR } from "@/actions/itr";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 
-export default function ITRClient({ patientId, initialData }: { patientId: string; initialData: any }) {
+export default function ITRClient({ targetId, isSubProfile, initialData }: { targetId: string; isSubProfile: boolean; initialData: any }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   
@@ -47,26 +49,7 @@ export default function ITRClient({ patientId, initialData }: { patientId: strin
   const [dependentMaritalStatus, setDependentMaritalStatus] = useState(itr?.dependentMaritalStatus || "Single");
   const [dependentSex, setDependentSex] = useState(itr?.dependentSex || "Male");
 
-  // Vitals
-  const [bloodPressure, setBloodPressure] = useState(itr?.bloodPressure || "");
-  const [temperature, setTemperature] = useState(itr?.temperature || "");
-  const [heartRate, setHeartRate] = useState(itr?.heartRate || "");
-  const [respiratoryRate, setRespiratoryRate] = useState(itr?.respiratoryRate || "");
-  const [o2Sat, setO2Sat] = useState(itr?.o2Sat || "");
-  const [heightCm, setHeightCm] = useState(itr?.heightCm || "");
-  const [weightKg, setWeightKg] = useState(itr?.weightKg || "");
-  const [bloodType, setBloodType] = useState(itr?.bloodType || "");
-  const [lengthCm, setLengthCm] = useState(itr?.lengthCm || "");
-  const [weightKg2yo, setWeightKg2yo] = useState(itr?.weightKg2yo || "");
-  const [muac, setMuac] = useState(itr?.muac || "");
-
-  // Complaints
-  const [chiefComplaints, setChiefComplaints] = useState<string[]>(itr?.chiefComplaints ? (typeof itr.chiefComplaints === 'string' ? JSON.parse(itr.chiefComplaints) : itr.chiefComplaints) : []);
-  const [otherComplaints, setOtherComplaints] = useState(itr?.otherComplaints || "");
-  const [medicationsTaken, setMedicationsTaken] = useState(itr?.medicationsTaken ? "Yes" : "No");
-  const [medicationsSpec, setMedicationsSpec] = useState(itr?.medicationsSpec || "");
-  const [prescriptionRefill, setPrescriptionRefill] = useState(itr?.prescriptionRefill ? "Yes" : "No");
-  const [prescriptionSpec, setPrescriptionSpec] = useState(itr?.prescriptionSpec || "");
+  // Complaints (Removed from Patient UI, now handled by Triage)
 
   // Medical History
   const [pastMedicalHistory, setPastMedicalHistory] = useState<string[]>(itr?.pastMedicalHistory ? (typeof itr.pastMedicalHistory === 'string' ? JSON.parse(itr.pastMedicalHistory) : itr.pastMedicalHistory) : []);
@@ -165,26 +148,14 @@ export default function ITRClient({ patientId, initialData }: { patientId: strin
         name: `${firstName} ${lastName}`.trim()
       },
       itrFields: {
-        familySerialNumber, familyCode, bloodType, philhealthNumber, memberType,
+        familySerialNumber, familyCode, philhealthNumber, memberType,
         clientType: JSON.stringify(clientType),
         
         dependentLastName, dependentFirstName, dependentMiddleName, dependentPin,
         dependentBirthday: dependentBirthday ? new Date(dependentBirthday) : null,
         dependentMaritalStatus, dependentSex,
 
-        bloodPressure, temperature, heartRate, respiratoryRate, o2Sat,
-        heightCm: heightCm ? parseFloat(heightCm as string) : null,
-        weightKg: weightKg ? parseFloat(weightKg as string) : null,
-        lengthCm: lengthCm ? parseFloat(lengthCm as string) : null,
-        weightKg2yo: weightKg2yo ? parseFloat(weightKg2yo as string) : null,
-        muac: muac ? parseFloat(muac as string) : null,
-
-        chiefComplaints: JSON.stringify(chiefComplaints),
-        otherComplaints,
-        medicationsTaken: medicationsTaken === "Yes",
-        medicationsSpec,
-        prescriptionRefill: prescriptionRefill === "Yes",
-        prescriptionSpec,
+        // Vitals and Complaints are now recorded by staff during triage
 
         pastMedicalHistory: JSON.stringify(pastMedicalHistory),
         hospitalizationSpec, allergiesSpec, pastMedicalOthers,
@@ -207,7 +178,8 @@ export default function ITRClient({ patientId, initialData }: { patientId: strin
       }
     };
 
-    const res = await saveITR(patientId, data, isDraft);
+    setLoading(true);
+    const res = await saveITR(targetId, data, isDraft, isSubProfile);
     setLoading(false);
 
     if (res?.success) {
@@ -228,11 +200,23 @@ export default function ITRClient({ patientId, initialData }: { patientId: strin
 
   return (
     <div className="max-w-5xl mx-auto pb-32">
+      {/* ── Back Button ── */}
+      <div className="mb-4">
+        <Button 
+          variant="ghost" 
+          onClick={() => router.back()} 
+          className="text-slate-500 hover:text-slate-700 hover:bg-slate-100 -ml-2"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back
+        </Button>
+      </div>
+
       {/* HEADER */}
       <div className="bg-white p-6 rounded-t-2xl border-b-4 border-emerald-600 shadow-sm mb-6 flex flex-col md:flex-row items-center justify-between text-center md:text-left gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center shrink-0 border-2 border-emerald-500">
-             <span className="text-2xl font-bold text-emerald-700">MHO</span>
+          <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shrink-0 overflow-hidden">
+             <Image src="/rhu1.png" alt="RHU Logo" width={96} height={96} className="w-full h-full object-contain scale-110" />
           </div>
           <div>
             <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-slate-900 uppercase">Individual Treatment Record</h1>
@@ -244,6 +228,42 @@ export default function ITRClient({ patientId, initialData }: { patientId: strin
           <p className="text-sm text-slate-500 mt-2 font-mono" suppressHydrationWarning>{format(new Date(), "PPpp")}</p>
         </div>
       </div>
+
+      {/* ── Who is this record for? Banner ── */}
+      <div className={cn(
+        "mb-6 p-4 rounded-xl border-2 flex items-center gap-4",
+        isSubProfile ? "bg-amber-50 border-amber-200" : "bg-sky-50 border-sky-200"
+      )}>
+        <div className={cn(
+          "w-12 h-12 rounded-full flex items-center justify-center shrink-0 border-2",
+          isSubProfile ? "bg-amber-100 text-amber-700 border-amber-200" : "bg-sky-100 text-sky-700 border-sky-200"
+        )}>
+          <User className="w-6 h-6" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-0.5">
+            {isUpdating ? "Editing Record For" : "Creating Record For"}
+          </p>
+          <div className="flex items-center gap-2">
+            <h2 className={cn(
+              "text-xl font-bold tracking-tight",
+              isSubProfile ? "text-amber-950" : "text-sky-950"
+            )}>
+              {firstName} {lastName}
+            </h2>
+            <Badge variant="outline" className={cn(
+              "border",
+              isSubProfile ? "bg-amber-100 text-amber-800 border-amber-300" : "bg-sky-100 text-sky-800 border-sky-300"
+            )}>
+              {isSubProfile ? "Family Member" : "Myself"}
+            </Badge>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-slate-500 mt-2 mb-6">
+        {isSubProfile ? "Manage the health record for your family member." : "Please provide your complete medical history and current health information. This helps our healthcare providers give you the best possible care."}
+      </p>
 
       <div className="space-y-6">
         
@@ -370,101 +390,10 @@ export default function ITRClient({ patientId, initialData }: { patientId: strin
           </div>
         )}
 
-        {/* SECTION 3 */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="bg-emerald-600 px-6 py-4 flex justify-between items-center cursor-pointer text-white" onClick={() => toggleSection('sec3')}>
-            <h2 className="font-bold text-lg">3. Vital Signs <EditableTag/></h2>
-            <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
-              {sectionsOpen.sec3 ? <span className="text-white text-xs">▼</span> : <span className="text-white text-xs">▲</span>}
-            </div>
-          </div>
-          {sectionsOpen.sec3 && (
-            <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-6">
-              <div className="space-y-2"><Label>Blood Pressure (mmHg)</Label><Input value={bloodPressure} onChange={e=>setBloodPressure(e.target.value)} placeholder="120/80" /></div>
-              <div className="space-y-2"><Label>Temperature (°C)</Label><Input value={temperature} onChange={e=>setTemperature(e.target.value)} placeholder="36.5" /></div>
-              <div className="space-y-2"><Label>Heart Rate (bpm)</Label><Input value={heartRate} onChange={e=>setHeartRate(e.target.value)} /></div>
-              <div className="space-y-2"><Label>Respiratory Rate (bpm)</Label><Input value={respiratoryRate} onChange={e=>setRespiratoryRate(e.target.value)} /></div>
-              <div className="space-y-2"><Label>O2 Saturation (%)</Label><Input value={o2Sat} onChange={e=>setO2Sat(e.target.value)} /></div>
-              <div className="space-y-2"><Label>Height (cm)</Label><Input type="number" value={heightCm} onChange={e=>setHeightCm(e.target.value)} /></div>
-              <div className="space-y-2"><Label>Weight (kg)</Label><Input type="number" value={weightKg} onChange={e=>setWeightKg(e.target.value)} /></div>
-              <div className="space-y-2">
-                <Label>Blood Type</Label>
-                <select value={bloodType} onChange={e=>setBloodType(e.target.value)} className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2">
-                  <option value="">Select...</option>
-                  <option value="A+">A+</option><option value="A-">A-</option>
-                  <option value="B+">B+</option><option value="B-">B-</option>
-                  <option value="AB+">AB+</option><option value="AB-">AB-</option>
-                  <option value="O+">O+</option><option value="O-">O-</option>
-                </select>
-              </div>
-
-              {/* Conditional for 2 y/o below */}
-              {isTwoOrBelow && (
-                <>
-                  <div className="col-span-full border-t pt-4 mt-2"><h3 className="text-sm font-bold text-amber-600 mb-4">For 2 Years Old and Below</h3></div>
-                  <div className="space-y-2"><Label>Length (cm)</Label><Input type="number" value={lengthCm} onChange={e=>setLengthCm(e.target.value)} /></div>
-                  <div className="space-y-2"><Label>Weight (kg)</Label><Input type="number" value={weightKg2yo} onChange={e=>setWeightKg2yo(e.target.value)} /></div>
-                  <div className="space-y-2"><Label>MUAC (cm)</Label><Input type="number" value={muac} onChange={e=>setMuac(e.target.value)} /></div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* SECTION 4 */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="bg-emerald-600 px-6 py-4 flex justify-between items-center cursor-pointer text-white" onClick={() => toggleSection('sec4')}>
-            <h2 className="font-bold text-lg">4. Chief Complaints <EditableTag/></h2>
-            <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
-              {sectionsOpen.sec4 ? <span className="text-white text-xs">▼</span> : <span className="text-white text-xs">▲</span>}
-            </div>
-          </div>
-          {sectionsOpen.sec4 && (
-            <div className="p-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {["Fever / Body Pain", "Cough / Colds", "Dizziness / Headache", "Rash / Skin Lesions", "Blurring of Vision / Hearing Loss", "LBM / Painful Urination"].map(complaint => (
-                  <label key={complaint} className="flex items-center gap-3 cursor-pointer p-2 hover:bg-slate-50 rounded-lg">
-                    <input type="checkbox" checked={chiefComplaints.includes(complaint)} onChange={() => handleCheckboxArray(complaint, chiefComplaints, setChiefComplaints)} className="w-4 h-4 accent-emerald-600 rounded" />
-                    <span>{complaint}</span>
-                  </label>
-                ))}
-                <label className="flex items-center gap-3 cursor-pointer p-2 hover:bg-slate-50 rounded-lg">
-                  <input type="checkbox" checked={chiefComplaints.includes("Others")} onChange={() => handleCheckboxArray("Others", chiefComplaints, setChiefComplaints)} className="w-4 h-4 accent-emerald-600 rounded" />
-                  <span>Others</span>
-                </label>
-                {chiefComplaints.includes("Others") && (
-                  <div className="md:col-span-2 mt-2">
-                    <Input value={otherComplaints} onChange={e=>setOtherComplaints(e.target.value)} placeholder="Please specify other complaints..." />
-                  </div>
-                )}
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-6 border-t pt-6">
-                <div className="space-y-3">
-                  <Label className="font-bold text-slate-800">Medication/s Taken</Label>
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-2"><input type="radio" name="meds" value="No" checked={medicationsTaken==="No"} onChange={()=>setMedicationsTaken("No")} className="accent-emerald-600"/> No</label>
-                    <label className="flex items-center gap-2"><input type="radio" name="meds" value="Yes" checked={medicationsTaken==="Yes"} onChange={()=>setMedicationsTaken("Yes")} className="accent-emerald-600"/> Yes</label>
-                  </div>
-                  {medicationsTaken === "Yes" && <Input value={medicationsSpec} onChange={e=>setMedicationsSpec(e.target.value)} placeholder="Specify medications..." />}
-                </div>
-                <div className="space-y-3">
-                  <Label className="font-bold text-slate-800">Prescription Refill</Label>
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-2"><input type="radio" name="refill" value="No" checked={prescriptionRefill==="No"} onChange={()=>setPrescriptionRefill("No")} className="accent-emerald-600"/> No</label>
-                    <label className="flex items-center gap-2"><input type="radio" name="refill" value="Yes" checked={prescriptionRefill==="Yes"} onChange={()=>setPrescriptionRefill("Yes")} className="accent-emerald-600"/> Yes</label>
-                  </div>
-                  {prescriptionRefill === "Yes" && <Input value={prescriptionSpec} onChange={e=>setPrescriptionSpec(e.target.value)} placeholder="Medicine/s requested..." />}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* SECTION 5 */}
+        {/* SECTION 3: Past Medical History (Previously Sec 5) */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="bg-emerald-600 px-6 py-4 flex justify-between items-center cursor-pointer text-white" onClick={() => toggleSection('sec5')}>
-            <h2 className="font-bold text-lg">5. Past Medical History</h2>
+            <h2 className="font-bold text-lg">3. Past Medical History</h2>
             <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
               {sectionsOpen.sec5 ? <span className="text-white text-xs">▼</span> : <span className="text-white text-xs">▲</span>}
             </div>
@@ -508,10 +437,10 @@ export default function ITRClient({ patientId, initialData }: { patientId: strin
 
         {/* SEC 6, 7, 8 in Grid */}
         <div className="grid lg:grid-cols-2 gap-6">
-          {/* SECTION 6 */}
+          {/* SECTION 4: Family History (Previously Sec 6) */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="bg-emerald-600 px-6 py-4 flex justify-between items-center cursor-pointer text-white" onClick={() => toggleSection('sec6')}>
-              <h2 className="font-bold text-lg">6. Family History</h2>
+              <h2 className="font-bold text-lg">4. Family History</h2>
               <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
                 {sectionsOpen.sec6 ? <span className="text-white text-xs">▼</span> : <span className="text-white text-xs">▲</span>}
               </div>
@@ -540,10 +469,10 @@ export default function ITRClient({ patientId, initialData }: { patientId: strin
           </div>
 
           <div className="space-y-6">
-            {/* SECTION 7 */}
+            {/* SECTION 5: Surgical History (Previously Sec 7) */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="bg-emerald-600 px-6 py-4 flex justify-between items-center cursor-pointer text-white" onClick={() => toggleSection('sec7')}>
-                <h2 className="font-bold text-lg">7. Surgical History</h2>
+                <h2 className="font-bold text-lg">5. Surgical History</h2>
                 <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
                   {sectionsOpen.sec7 ? <span className="text-white text-xs">▼</span> : <span className="text-white text-xs">▲</span>}
                 </div>
@@ -567,10 +496,10 @@ export default function ITRClient({ patientId, initialData }: { patientId: strin
               )}
             </div>
 
-            {/* SECTION 8 */}
+            {/* SECTION 6: Personal Social History (Previously Sec 8) */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="bg-emerald-600 px-6 py-4 flex justify-between items-center cursor-pointer text-white" onClick={() => toggleSection('sec8')}>
-                <h2 className="font-bold text-lg">8. Personal Social History</h2>
+                <h2 className="font-bold text-lg">6. Personal Social History</h2>
                 <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
                   {sectionsOpen.sec8 ? <span className="text-white text-xs">▼</span> : <span className="text-white text-xs">▲</span>}
                 </div>
@@ -597,11 +526,11 @@ export default function ITRClient({ patientId, initialData }: { patientId: strin
           </div>
         </div>
 
-        {/* SECTION 9 (Conditional OB) */}
+        {/* SECTION 7: OB-Gyne History (Previously Sec 9, Conditional) */}
         {sex === "Female" && (
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden border-l-4 border-l-pink-500">
             <div className="bg-slate-100 px-6 py-4 border-b border-slate-200">
-              <h2 className="font-bold text-slate-800 text-lg">9. OB-Gyne History</h2>
+              <h2 className="font-bold text-slate-800 text-lg">7. OB-Gyne History</h2>
             </div>
             <div className="p-6 grid md:grid-cols-2 gap-6">
               <div className="space-y-2"><Label>Last Menstrual Period</Label><Input type="date" value={lastMenstrualPeriod} onChange={e=>setLastMenstrualPeriod(e.target.value)} /></div>
@@ -617,10 +546,10 @@ export default function ITRClient({ patientId, initialData }: { patientId: strin
           </div>
         )}
 
-        {/* SECTION 10 */}
+        {/* SECTION 8: Immunization (Previously Sec 10) */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="bg-emerald-600 px-6 py-4 flex justify-between items-center cursor-pointer text-white" onClick={() => toggleSection('sec10')}>
-            <h2 className="font-bold text-lg">10. Immunization</h2>
+            <h2 className="font-bold text-lg">8. Immunization</h2>
             <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
               {sectionsOpen.sec10 ? <span className="text-white text-xs">▼</span> : <span className="text-white text-xs">▲</span>}
             </div>
@@ -638,22 +567,31 @@ export default function ITRClient({ patientId, initialData }: { patientId: strin
       </div>
 
       {/* STICKY BOTTOM BAR */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] z-50 transition-all">
-        <div className="max-w-6xl mx-auto px-6 lg:pl-72 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="w-full sm:w-auto">
-            <p className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] z-40 transition-all">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
+          <div className="w-full sm:w-auto text-center sm:text-left">
+            <p className="text-sm font-bold text-slate-800 flex items-center justify-center sm:justify-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               {isUpdating ? "Updating Health Record" : "New Health Record"}
             </p>
             <p className="text-xs text-slate-500">Please review your entries before saving.</p>
           </div>
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            <Button variant="outline" onClick={() => handleSave(true)} disabled={loading} className="w-full sm:w-auto">
+          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+            <Button 
+              variant="outline" 
+              onClick={() => handleSave(true)} 
+              disabled={loading} 
+              className="flex-1 sm:flex-initial text-xs sm:text-sm px-3 sm:px-4"
+            >
               Save as Draft
             </Button>
-            <Button onClick={() => handleSave(false)} disabled={loading} className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700">
-              <Save className="w-4 h-4 mr-2" />
-              {isUpdating ? "Update Record" : "Save & Continue"}
+            <Button 
+              onClick={() => handleSave(false)} 
+              disabled={loading} 
+              className="flex-1 sm:flex-initial text-xs sm:text-sm px-3 sm:px-4 bg-emerald-600 hover:bg-emerald-700 text-white shrink-0"
+            >
+              <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2 shrink-0" />
+              {isUpdating ? "Update Record" : "Save Record"}
             </Button>
           </div>
         </div>

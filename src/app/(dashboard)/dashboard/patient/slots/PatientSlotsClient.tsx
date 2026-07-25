@@ -150,127 +150,133 @@ export function PatientSlotsClient({ services }: { services: Service[] }) {
         </div>
 
         {/* TOP FILTERS BAR */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between mb-6 flex-shrink-0">
-          <div className="flex items-center gap-4 w-full md:w-auto">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4 mb-6">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full justify-between">
             <select 
               value={selectedServiceId} 
               onChange={(e) => {
                 setSelectedServiceId(e.target.value);
                 setSelectedDate(null);
               }} 
-              className="w-full md:w-48 px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all font-medium text-slate-700"
+              className="w-full sm:w-56 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all font-medium text-slate-700 bg-white"
             >
               {services.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
             </select>
             
-            <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg p-1">
-              <button 
-                onClick={handlePrevMonth} 
-                disabled={isSameMonth(currentMonth, new Date())}
-                className="p-1.5 hover:bg-white hover:shadow-sm rounded-md transition-all text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <div className="w-32 text-center font-semibold text-slate-800 text-sm">
-                {format(currentMonth, "MMMM yyyy")}
+            <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto">
+              <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg p-1 flex-1 sm:flex-initial justify-between sm:justify-start">
+                <button 
+                  onClick={handlePrevMonth} 
+                  disabled={isSameMonth(currentMonth, new Date())}
+                  className="p-1.5 hover:bg-white hover:shadow-sm rounded-md transition-all text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <div className="px-2 text-center font-semibold text-slate-800 text-sm min-w-[110px]">
+                  {format(currentMonth, "MMMM yyyy")}
+                </div>
+                <button onClick={handleNextMonth} className="p-1.5 hover:bg-white hover:shadow-sm rounded-md transition-all text-slate-600">
+                  <ChevronRight className="w-5 h-5" />
+                </button>
               </div>
-              <button onClick={handleNextMonth} className="p-1.5 hover:bg-white hover:shadow-sm rounded-md transition-all text-slate-600">
-                <ChevronRight className="w-5 h-5" />
+              
+              <button 
+                onClick={handleToday}
+                className="px-3.5 py-2 bg-white border border-[#16a34a] text-[#16a34a] text-sm font-semibold rounded-lg hover:bg-green-50 transition-colors shrink-0"
+              >
+                Today
               </button>
             </div>
-            
-            <button 
-              onClick={handleToday}
-              className="px-4 py-2 bg-white border border-[#16a34a] text-[#16a34a] text-sm font-semibold rounded-lg hover:bg-green-50 transition-colors"
-            >
-              Today
-            </button>
           </div>
 
-          <div className="flex items-center gap-3 text-xs font-medium text-slate-600 ml-auto whitespace-nowrap overflow-x-auto pb-1 md:pb-0">
-            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100"><div className="w-2 h-2 rounded-full bg-[#16a34a]" /> Available</div>
-            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100"><div className="w-2 h-2 rounded-full bg-[#D97706]" /> Partially Booked</div>
-            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100"><div className="w-2 h-2 rounded-full bg-[#EF4444]" /> Fully Booked</div>
-            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100"><div className="w-2 h-2 rounded-full bg-[#D1D5DB]" /> Closed</div>
+          <div className="flex items-center gap-2 sm:gap-3 text-xs font-medium text-slate-600 w-full overflow-x-auto no-scrollbar whitespace-nowrap pt-3 border-t border-slate-100">
+            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100 shrink-0"><div className="w-2 h-2 rounded-full bg-[#16a34a]" /> Available</div>
+            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100 shrink-0"><div className="w-2 h-2 rounded-full bg-[#D97706]" /> Partially Booked</div>
+            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100 shrink-0"><div className="w-2 h-2 rounded-full bg-[#EF4444]" /> Fully Booked</div>
+            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100 shrink-0"><div className="w-2 h-2 rounded-full bg-amber-500" /> On Leave</div>
+            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-full border border-slate-100 shrink-0"><div className="w-2 h-2 rounded-full bg-[#D1D5DB]" /> Closed</div>
           </div>
         </div>
 
         {/* CALENDAR CANVAS */}
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="grid grid-cols-7 border-b border-[#E5E7EB] bg-[#F9FAFB]">
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(day => (
-              <div key={day} className="py-3 text-center text-[13px] font-semibold text-[#6B7280] uppercase tracking-wider border-r border-[#E5E7EB] last:border-r-0">
-                {day}
+          <div className="overflow-x-auto w-full">
+            <div className="min-w-[600px] sm:min-w-0">
+              <div className="grid grid-cols-7 border-b border-[#E5E7EB] bg-[#F9FAFB]">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(day => (
+                  <div key={day} className="py-3 text-center text-[13px] font-semibold text-[#6B7280] uppercase tracking-wider border-r border-[#E5E7EB] last:border-r-0">
+                    {day}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          
-          <div className="grid grid-cols-7 auto-rows-fr">
-            {calendarDays.map((day, idx) => {
-              const y = day.getFullYear();
-              const m = String(day.getMonth() + 1).padStart(2, '0');
-              const d = String(day.getDate()).padStart(2, '0');
-              const dateStr = `${y}-${m}-${d}`;
-
-              const isCurrentMonth = isSameMonth(day, monthStart);
-              const isTodayDate = isToday(day);
-              const dayOfWeek = day.getDay();
               
-              const isUltrasound = selectedServiceName === "Ultrasound";
-              const isClosed = isUltrasound 
-                ? dayOfWeek !== 4 
-                : (dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6);
-                
-              const isPast = day < new Date(new Date().setHours(0,0,0,0));
-              
-              const dayData = summaryData.find(d => d.date === dateStr);
-              
-              // Determine cell styling
-              let cellBg = "bg-white";
-              let content = null;
-              let isClosedStyle = false;
+              <div className="grid grid-cols-7 auto-rows-fr">
+                {calendarDays.map((day, idx) => {
+                  const y = day.getFullYear();
+                  const m = String(day.getMonth() + 1).padStart(2, '0');
+                  const d = String(day.getDate()).padStart(2, '0');
+                  const dateStr = `${y}-${m}-${d}`;
 
-              if (!isCurrentMonth) {
-                cellBg = "bg-slate-50/50";
-              } else if (isPast || isClosed) {
-                isClosedStyle = true;
-                cellBg = "bg-[#F9FAFB]";
-                content = <div className="text-[12px] font-medium text-[#D1D5DB] mt-4 text-center">Closed</div>;
-              } else {
-                if (isFetchingMonth) {
-                  content = <div className="w-[80%] mx-auto h-6 bg-slate-100 animate-pulse rounded-full mt-3" />;
-                } else if (dayData) {
-                  const { available, total } = dayData;
-                  let badgeBg, badgeText, badgeBorder;
-
-                  if (available === total) {
-                    badgeBg = "bg-[#F0FDF4]"; badgeText = "text-[#16a34a]"; badgeBorder = "border-[#bbf7d0]";
-                  } else if (available === 0) {
-                    badgeBg = "bg-[#FEF2F2]"; badgeText = "text-[#EF4444]"; badgeBorder = "border-[#FECACA]";
-                  } else {
-                    badgeBg = "bg-[#FFFBEB]"; badgeText = "text-[#D97706]"; badgeBorder = "border-[#FDE68A]";
-                  }
+                  const isCurrentMonth = isSameMonth(day, monthStart);
+                  const isTodayDate = isToday(day);
+                  const dayOfWeek = day.getDay();
                   
-                  content = (
-                    <div className="flex justify-center mt-3">
-                      <div className={cn(
-                        "rounded-[20px] px-[12px] py-[4px] text-[12px] font-medium border",
-                        badgeBg, badgeText, badgeBorder
-                      )}>
-                        {available === 0 ? "Fully Booked" : `${available} / ${total} available`}
-                      </div>
-                    </div>
-                  );
-                } else {
-                   content = (
-                    <div className="flex justify-center mt-3">
-                      <div className="rounded-[20px] px-[12px] py-[4px] text-[12px] font-medium text-[#9CA3AF]">
-                        18 / 18 available
-                      </div>
-                    </div>
-                   );
-                }
-              }
+                  const isUltrasound = selectedServiceName === "Ultrasound";
+                  const isClosed = isUltrasound 
+                    ? dayOfWeek !== 4 
+                    : (dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6);
+                    
+                  const isPast = day < new Date(new Date().setHours(0,0,0,0));
+                  
+                  const dayData = summaryData.find(d => d.date === dateStr);
+                  
+                  // Determine cell styling
+                  let cellBg = "bg-white";
+                  let content = null;
+                  let isClosedStyle = false;
+
+                  if (!isCurrentMonth) {
+                    cellBg = "bg-slate-50/50";
+                  } else if (isPast || isClosed) {
+                    isClosedStyle = true;
+                    cellBg = "bg-[#F9FAFB]";
+                    content = <div className="text-[11px] sm:text-[12px] font-medium text-[#D1D5DB] mt-4 text-center">Closed</div>;
+                  } else {
+                    if (isFetchingMonth) {
+                      content = <div className="w-[80%] mx-auto h-6 bg-slate-100 animate-pulse rounded-full mt-3" />;
+                    } else if (dayData) {
+                      const { available, total, isLeave } = dayData;
+                      
+                      content = (
+                        <div className="flex justify-center mt-3">
+                          <div className={cn(
+                            "rounded-[20px] px-[8px] sm:px-[12px] py-[3px] sm:py-[4px] text-[10px] sm:text-[12px] font-medium border text-center leading-tight",
+                            isLeave
+                              ? "bg-amber-50 text-amber-600 border-amber-200"
+                              : available === 0 
+                                ? "bg-[#FEF2F2] text-[#EF4444] border-[#FECACA]" 
+                                : available === total
+                                  ? "bg-[#F0FDF4] text-[#16a34a] border-[#bbf7d0]"
+                                  : "bg-[#FFFBEB] text-[#D97706] border-[#FDE68A]"
+                          )}>
+                            {isLeave
+                              ? "Doctor is on leave"
+                              : available === 0 
+                                ? "Fully Booked" 
+                                : `${available} / ${total} available`}
+                          </div>
+                        </div>
+                      );
+                    } else {
+                       content = (
+                        <div className="flex justify-center mt-3">
+                          <div className="rounded-[20px] px-[8px] sm:px-[12px] py-[3px] sm:py-[4px] text-[10px] sm:text-[12px] font-medium text-[#9CA3AF]">
+                            18 / 18 available
+                          </div>
+                        </div>
+                       );
+                    }
+                  }
 
               return (
                 <div 
@@ -299,6 +305,8 @@ export function PatientSlotsClient({ services }: { services: Service[] }) {
           </div>
         </div>
       </div>
+    </div>
+  </div>
 
       {/* BACKDROP */}
       {selectedDate && (

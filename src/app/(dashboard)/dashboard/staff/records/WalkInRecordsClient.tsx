@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search, Filter, X, Loader2, ClipboardList, ChevronRight, AlertTriangle } from "lucide-react";
+import { Search, Filter, X, Loader2, ClipboardList, ChevronRight, AlertTriangle, Download } from "lucide-react";
 import { formatDatePHT } from "@/lib/utils";
+import { exportPatientRecordsToPDF } from "@/lib/exportPdf";
 import { cn } from "@/lib/utils";
 
 type WalkInRecord = {
@@ -107,13 +108,27 @@ export function WalkInRecordsClient({ services }: { services: { name: string; do
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-12">
       {/* HEADER */}
-      <div>
-        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 tracking-tight">
-          Patient Records
-        </h1>
-        <p className="text-slate-500 mt-1 text-sm">
-          Permanent record of all completed consultations. Read-only.
-        </p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 tracking-tight">
+            Patient Records
+          </h1>
+          <p className="text-slate-500 mt-1 text-sm">
+            Permanent record of all completed consultations. Read-only.
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            if (items.length > 0) {
+              exportPatientRecordsToPDF(items);
+            }
+          }}
+          disabled={isLoading || items.length === 0}
+          className="flex items-center gap-2 self-start md:self-auto px-4 py-2 border border-green-200 text-green-700 rounded-md text-sm font-medium hover:bg-green-50 transition-colors disabled:opacity-50"
+        >
+          <Download className="w-4 h-4" />
+          Export PDF
+        </button>
       </div>
 
       {/* FILTER PANEL */}

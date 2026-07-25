@@ -47,6 +47,12 @@ type Appointment = {
     id: string;
     date: string;
   };
+  subProfile?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    relationship: string;
+  } | null;
 };
 
 type Tab = "all" | "upcoming" | "completed";
@@ -109,10 +115,7 @@ function AppointmentCard({
 }) {
   const todayPHT = getTodayPHT();
   const rawDate = new Date(appointment.schedule.date);
-  const manilaStr = rawDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' });
-  const apptManilaDate = new Date(manilaStr);
-  apptManilaDate.setHours(0, 0, 0, 0);
-  const isPast = apptManilaDate.getTime() < todayPHT.getTime();
+  const isPast = rawDate.getTime() < todayPHT.getTime();
 
   return (
     <Card className={cn(
@@ -136,6 +139,14 @@ function AppointmentCard({
                 <span className="truncate">
                   {appointment.doctor_name ?? "Assigned Doctor"}
                 </span>
+              </p>
+              {/* Patient indicator — who this appointment is for */}
+              <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
+                <span className="text-slate-300">👤</span>
+                {appointment.subProfile
+                  ? <span className="text-emerald-700 font-medium">{appointment.subProfile.firstName} {appointment.subProfile.lastName} <span className="text-slate-400 font-normal">({appointment.subProfile.relationship})</span></span>
+                  : <span className="text-slate-500">Myself</span>
+                }
               </p>
               <div className="flex flex-col gap-1.5 mt-3 text-sm text-slate-600">
                 <span className="flex items-center gap-1.5">
@@ -291,12 +302,9 @@ export default function AppointmentsClient({
   const filtered = localAppointments.filter((appt) => {
     // Compare in Manila time
     const rawDate = new Date(appt.schedule.date);
-    const manilaStr = rawDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' });
-    const apptManilaDate = new Date(manilaStr);
-    apptManilaDate.setHours(0, 0, 0, 0);
     
     const todayMs = todayPHT.getTime();
-    const apptMs = apptManilaDate.getTime();
+    const apptMs = rawDate.getTime();
     if (activeTab === "upcoming") {
       return (
         apptMs >= todayMs &&

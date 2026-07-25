@@ -8,16 +8,22 @@ export const metadata = {
   description: "Complete your health record",
 };
 
-export default async function ITRPage() {
+export default async function ITRPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
   const session = await verifySession();
 
   if (!session || session.role !== "PATIENT") {
     redirect("/login");
   }
 
-  const patientId = session.userId;
+  const params = await searchParams;
+  const isSubProfile = !!params.subProfileId;
+  const targetId = isSubProfile ? (params.subProfileId as string) : session.userId;
 
-  const data = await getITR(patientId);
+  const data = await getITR(targetId, isSubProfile);
   
   if (!data) {
     return (
@@ -30,6 +36,6 @@ export default async function ITRPage() {
     );
   }
 
-  return <ITRClient patientId={patientId} initialData={data} />;
+  return <ITRClient targetId={targetId} isSubProfile={isSubProfile} initialData={data} />;
 }
 
