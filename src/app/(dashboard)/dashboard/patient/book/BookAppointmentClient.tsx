@@ -33,8 +33,9 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { getBookedSlots, createAppointment, checkServiceAvailability } from "@/actions/book-appointment";
-import { cn } from "@/lib/utils";
+import { getBookedSlots, createAppointment, checkServiceAvailability, getUpcomingLeavesForService } from "@/actions/book-appointment";
+import { getSubProfiles } from "@/actions/sub-profiles";
+import { cn, isTimeSlotPassedPHT } from "@/lib/utils";
 
 const DEFAULT_SERVICES_ICONS: Record<string, any> = {
   "Dental Clinic": Smile,
@@ -133,8 +134,24 @@ export default function BookAppointmentClient({
   const [selectedTimeSlot, setSelectedTimeSlot] = useState("");
   const [notes, setNotes] = useState("");
 
+  // Sub-profile (family member) state
+  type SubProfileOption = { id: string; firstName: string; lastName: string; relationship: string; itr?: { isCompleted: boolean } };
+  const [subProfiles, setSubProfiles] = useState<SubProfileOption[]>([]);
+  const [selectedSubProfileId, setSelectedSubProfileId] = useState<string | null | undefined>(undefined); // undefined = unselected, null = "Myself"
+  const [isFetchingProfiles, setIsFetchingProfiles] = useState(false);
+
+  // Fetch sub-profiles on mount
+  useEffect(() => {
+    setIsFetchingProfiles(true);
+    getSubProfiles().then((res) => {
+      if (res.success) setSubProfiles(res.data as SubProfileOption[]);
+      setIsFetchingProfiles(false);
+    });
+  }, []);
+
   // Slot data state
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  const [isDoctorOnLeave, setIsDoctorOnLeave] = useState(false);
   const [isFetchingSlots, setIsFetchingSlots] = useState(false);
   const [slotFetchError, setSlotFetchError] = useState<string | null>(null);
 
@@ -142,13 +159,38 @@ export default function BookAppointmentClient({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCheckingService, setIsCheckingService] = useState(false);
 
+  // Upcoming leaves state
+  const [upcomingLeaves, setUpcomingLeaves] = useState<any[]>([]);
+  const [isFetchingLeaves, setIsFetchingLeaves] = useState(false);
+
+  // ── Fetch upcoming leaves whenever step 2 is active ──────────────
+  const fetchUpcomingLeaves = useCallback(async (isBackground = false) => {
+    if (!selectedService) return;
+    if (!isBackground) setIsFetchingLeaves(true);
+    try {
+      const res = await getUpcomingLeavesForService(selectedService);
+      setUpcomingLeaves(res);
+    } catch {
+      console.error("Failed to fetch upcoming leaves");
+    } finally {
+      if (!isBackground) setIsFetchingLeaves(false);
+    }
+  }, [selectedService]);
+
+  useEffect(() => {
+    if (step === 2 && selectedService) {
+      fetchUpcomingLeaves();
+    }
+  }, [step, selectedService, fetchUpcomingLeaves]);
+
   // ── Fetch booked slots from DB whenever date or service changes ──────────────
-  const fetchBookedSlots = useCallback(async () => {
+  const fetchBookedSlots = useCallback(async (isBackground = false) => {
     if (!selectedDate || !selectedService) return;
 
-    setIsFetchingSlots(true);
-    setSelectedTimeSlot(""); // reset selection on date change
-    setSlotFetchError(null);
+    if (!isBackground) {
+      setIsFetchingSlots(true);
+      setSlotFetchError(null);
+    }
 
     try {
       const result = await getBookedSlots(
@@ -156,16 +198,17 @@ export default function BookAppointmentClient({
         selectedService
       );
       if (result.error) {
-        setSlotFetchError(result.error);
+        if (!isBackground) setSlotFetchError(result.error);
         setBookedSlots([]);
       } else {
         setBookedSlots(result.bookedSlots);
+        setIsDoctorOnLeave(!!result.isLeave);
       }
     } catch {
-      setSlotFetchError("Failed to load time slots. Please try again.");
+      if (!isBackground) setSlotFetchError("Failed to load time slots. Please try again.");
       setBookedSlots([]);
     } finally {
-      setIsFetchingSlots(false);
+      if (!isBackground) setIsFetchingSlots(false);
     }
   }, [selectedDate, selectedService]);
 
@@ -175,12 +218,35 @@ export default function BookAppointmentClient({
     }
   }, [selectedDate, selectedService, step, fetchBookedSlots]);
 
+  // ── Real-time polling ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (step === 2) {
+      const interval = setInterval(() => {
+        if (selectedService) fetchUpcomingLeaves(true);
+        if (selectedDate && selectedService) fetchBookedSlots(true);
+      }, 10000); // 10 seconds
+      return () => clearInterval(interval);
+    }
+  }, [step, selectedDate, selectedService, fetchUpcomingLeaves, fetchBookedSlots]);
+
   // ── Derived values ───────────────────────────────────────────────────────────
   const selectedServiceName = selectedService;
   
   const currentSlots = selectedServiceName === "Ultrasound" ? clinicConfig.ultrasoundSlots : clinicConfig.allSlots;
   const availableCount = currentSlots.length - bookedSlots.length;
   const allSlotsTaken = availableCount === 0 && !isFetchingSlots && !slotFetchError && !!selectedDate;
+
+  // Process leave dates for Calendar
+  const leaveDateObjects: Date[] = [];
+  upcomingLeaves.forEach(leave => {
+    let curr = new Date(leave.startDate);
+    const end = new Date(leave.endDate);
+    while (curr <= end) {
+      // Create local date for the calendar
+      leaveDateObjects.push(new Date(curr.getUTCFullYear(), curr.getUTCMonth(), curr.getUTCDate()));
+      curr.setUTCDate(curr.getUTCDate() + 1);
+    }
+  });
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleNext = async () => {
@@ -205,8 +271,11 @@ export default function BookAppointmentClient({
   const handleBack = () => { if (step > 1) setStep(step - 1); };
 
   const handleDateSelect = (date: Date | undefined) => {
-    setSelectedDate(date);
-    setSelectedTimeSlot(""); // clear time on date change
+    if (date !== selectedDate) {
+      setSelectedDate(date);
+      setSelectedTimeSlot(""); // clear time only on date change
+      setIsDoctorOnLeave(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -219,6 +288,7 @@ export default function BookAppointmentClient({
         date: format(selectedDate, "yyyy-MM-dd"),
         timeSlot: selectedTimeSlot,
         notes: notes.trim() !== "" ? notes.trim() : undefined,
+        subProfileId: selectedSubProfileId ?? undefined,
       });
 
       if (res.success) {
@@ -248,100 +318,202 @@ export default function BookAppointmentClient({
   return (
     <div className="space-y-8">
       {/* Step Indicator */}
-      <div className="flex items-center justify-between mb-8 relative">
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-slate-100 -z-10 rounded-full" />
-        <div
-          className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-emerald-500 -z-10 rounded-full transition-all duration-300"
-          style={{ width: `${((step - 1) / 2) * 100}%` }}
-        />
-        {[1, 2, 3].map((s) => (
-          <div key={s} className="flex flex-col items-center gap-2 bg-white px-2">
-            <div
-              className={cn(
-                "w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-colors shadow-sm",
-                step === s
-                  ? "bg-emerald-600 text-white border-2 border-emerald-100"
-                  : step > s
-                  ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
-                  : "bg-slate-50 text-slate-400 border border-slate-200"
-              )}
-            >
-              {step > s ? <CheckCircle2 className="w-5 h-5" /> : s}
+      <div className="mb-8 relative">
+        {/* Connecting Lines */}
+        <div className="absolute top-5 left-[16.66%] right-[16.66%] -translate-y-1/2 h-1 bg-slate-200 z-0 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-emerald-500 transition-all duration-300 rounded-full"
+            style={{ width: `${((step - 1) / 2) * 100}%` }}
+          />
+        </div>
+
+        {/* Steps */}
+        <div className="flex items-start justify-between relative z-10">
+          {[1, 2, 3].map((s) => (
+            <div key={s} className="flex-1 flex flex-col items-center gap-2">
+              <div
+                className={cn(
+                  "w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-colors shadow-sm",
+                  step === s
+                    ? "bg-emerald-600 text-white border-2 border-emerald-100"
+                    : step > s
+                    ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                    : "bg-white text-slate-400 border border-slate-200"
+                )}
+              >
+                {step > s ? <CheckCircle2 className="w-5 h-5" /> : s}
+              </div>
+              <span
+                className={cn(
+                  "text-xs font-medium text-center",
+                  step >= s ? "text-slate-900" : "text-slate-400"
+                )}
+              >
+                {s === 1 ? "Service & Patient" : s === 2 ? "Date & Time" : "Confirm"}
+              </span>
             </div>
-            <span
-              className={cn(
-                "text-xs font-medium",
-                step >= s ? "text-slate-900" : "text-slate-400"
-              )}
-            >
-              {s === 1 ? "Select Service" : s === 2 ? "Date & Time" : "Confirm"}
-            </span>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
-      {/* ── STEP 1: Select Service ──────────────────────────────────────────── */}
+      {/* ── STEP 1: Service & Patient ──────────────────────────────────────────── */}
       {step === 1 && (
-        <Card className="border-slate-200 shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <CardHeader>
-            <CardTitle>Select a Service</CardTitle>
-            <CardDescription>
-              Choose the type of consultation or service you need.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {services.map((service) => {
-                const Icon = DEFAULT_SERVICES_ICONS[service.name] || Activity;
-                const isSelected = selectedService === service.name;
-                return (
+        <div className="space-y-6">
+          <div className="bg-slate-50 border border-slate-100 p-6 rounded-2xl mb-8">
+                <div className="mb-4">
+                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <User className="w-5 h-5 text-emerald-600" /> Who is this appointment for?
+                  </h3>
+                  <p className="text-sm text-slate-500 mt-1">Book for yourself or a family member under your account.</p>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {/* Myself option */}
                   <button
-                    key={service.id}
-                    onClick={() => setSelectedService(service.name)}
+                    onClick={() => setSelectedSubProfileId(null)}
                     className={cn(
-                      "flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all duration-200",
-                      isSelected
-                        ? "border-emerald-600 bg-emerald-50/50 shadow-sm scale-[1.02]"
-                        : "border-slate-100 hover:border-emerald-200 hover:bg-slate-50"
+                      "flex items-center justify-between p-3 rounded-xl border-2 text-sm font-medium transition-all duration-150 text-left",
+                      selectedSubProfileId === null
+                        ? "border-emerald-600 bg-emerald-50 text-emerald-900 shadow-sm"
+                        : "border-slate-200 text-slate-600 hover:border-emerald-200 hover:bg-white bg-white"
                     )}
                   >
-                    <div
-                      className={cn(
-                        "p-3 rounded-full",
-                        isSelected
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-slate-100 text-slate-600"
-                      )}
-                    >
-                      <Icon className="w-6 h-6" />
+                    <div className="flex items-center gap-2 truncate">
+                      <User className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Myself</span>
                     </div>
-                    <span
+                    {selectedSubProfileId === null && (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    )}
+                  </button>
+
+                  {/* Family member options */}
+                  {subProfiles.map((sp) => {
+                    const hasITR = sp.itr?.isCompleted;
+                    return (
+                      <button
+                        key={sp.id}
+                        onClick={() => {
+                          if (!hasITR) {
+                            toast.error(`${sp.firstName} needs a completed health record first. Please manage their record from the Family Profiles page.`);
+                            return;
+                          }
+                          setSelectedSubProfileId(sp.id);
+                        }}
+                        className={cn(
+                          "flex flex-col justify-center p-3 rounded-xl border-2 text-sm font-medium transition-all duration-150 relative bg-white text-left",
+                          !hasITR
+                            ? "border-red-200 text-slate-400 cursor-not-allowed"
+                            : selectedSubProfileId === sp.id
+                              ? "border-emerald-600 bg-emerald-50 text-emerald-900 shadow-sm"
+                              : "border-slate-200 text-slate-600 hover:border-emerald-200"
+                        )}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-2 truncate">
+                            <Users className="w-4 h-4 shrink-0" />
+                            <span className="truncate">{sp.firstName} {sp.lastName}</span>
+                          </div>
+                          {selectedSubProfileId === sp.id && (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          )}
+                        </div>
+                        
+                        <div className="flex items-center gap-2 mt-1.5 ml-6">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-normal truncate">
+                            {sp.relationship}
+                          </span>
+                          {!hasITR && (
+                            <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 truncate">
+                              Needs ITR
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                  {/* Manage family profiles link */}
+                  <a
+                    href="/dashboard/patient/family"
+                    className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border-2 border-dashed border-slate-200 text-sm text-slate-500 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50 transition-all duration-150"
+                  >
+                    <Users className="w-4 h-4" />
+                    + Manage Family Profiles
+                  </a>
+                </div>
+          </div>
+
+          {/* ── Select Service ── */}
+          <Card className={cn("border-slate-200 shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100", 
+            selectedSubProfileId === undefined && "opacity-60 grayscale-[0.5]"
+          )}>
+            <CardHeader>
+              <CardTitle>Select a Service</CardTitle>
+              <CardDescription>
+                Choose the type of consultation or service you need.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {services.map((service) => {
+                  const Icon = DEFAULT_SERVICES_ICONS[service.name] || Activity;
+                  const isSelected = selectedService === service.name;
+                  const isDisabled = selectedSubProfileId === undefined;
+                  
+                  return (
+                    <button
+                      key={service.id}
+                      disabled={isDisabled}
+                      onClick={() => setSelectedService(service.name)}
                       className={cn(
-                        "font-semibold text-sm text-center",
-                        isSelected ? "text-emerald-900" : "text-slate-700"
+                        "flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all duration-200",
+                        isDisabled ? "cursor-not-allowed bg-slate-50 border-slate-100" :
+                        isSelected
+                          ? "border-emerald-600 bg-emerald-50/50 shadow-sm scale-[1.02]"
+                          : "border-slate-100 hover:border-emerald-200 hover:bg-slate-50"
                       )}
                     >
-                      {service.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-end pt-4 border-t border-slate-100">
-            <Button
-              onClick={handleNext}
-              disabled={!selectedService || isCheckingService}
-              className="bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto"
-            >
-              {isCheckingService ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Checking...</>
-              ) : (
-                <>Continue to Date & Time <ChevronRight className="w-4 h-4 ml-1" /></>
-              )}
-            </Button>
-          </CardFooter>
-        </Card>
+                      <div
+                        className={cn(
+                          "p-3 rounded-full",
+                          isDisabled ? "bg-slate-100 text-slate-400" :
+                          isSelected
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-slate-100 text-slate-600"
+                        )}
+                      >
+                        <Icon className="w-6 h-6" />
+                      </div>
+                      <span
+                        className={cn(
+                          "font-semibold text-sm text-center",
+                          isDisabled ? "text-slate-400" :
+                          isSelected ? "text-emerald-900" : "text-slate-700"
+                        )}
+                      >
+                        {service.name}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </CardContent>
+            <CardFooter className="flex justify-end pt-4 border-t border-slate-100">
+              <Button
+                onClick={handleNext}
+                disabled={!selectedService || selectedSubProfileId === undefined || isCheckingService}
+                className="bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto"
+              >
+                {isCheckingService ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Checking...</>
+                ) : (
+                  <>Continue to Date &amp; Time <ChevronRight className="w-4 h-4 ml-1" /></>
+                )}
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
       )}
 
       {/* ── STEP 2: Date & Time ─────────────────────────────────────────────── */}
@@ -367,7 +539,14 @@ export default function BookAppointmentClient({
                     mode="single"
                     selected={selectedDate}
                     onSelect={handleDateSelect}
-                    disabled={(d) => isDateDisabled(d, selectedServiceName)}
+                    disabled={[
+                      (d) => isDateDisabled(d, selectedServiceName),
+                      ...leaveDateObjects
+                    ]}
+                    modifiers={{ onLeave: leaveDateObjects }}
+                    modifiersClassNames={{
+                      onLeave: "bg-amber-100 text-amber-700 font-bold !cursor-not-allowed",
+                    }}
                     className="p-3"
                     classNames={{
                       selected:
@@ -386,6 +565,22 @@ export default function BookAppointmentClient({
                       <strong>8:00 AM to 5:00 PM</strong> only.
                     </span>
                   </div>
+                  {upcomingLeaves.map((leave, idx) => {
+                    const startStr = format(new Date(leave.startDate), "MMM d");
+                    const endStr = format(new Date(leave.endDate), "MMM d");
+                    const returnDate = new Date(leave.endDate);
+                    returnDate.setUTCDate(returnDate.getUTCDate() + 1);
+                    const returnStr = format(returnDate, "MMM d");
+                    return (
+                      <div key={idx} className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
+                        <span>
+                          <strong>Doctor on Leave:</strong> {startStr} to {endStr}.<br />
+                          Will return on <strong>{returnStr}</strong>.
+                        </span>
+                      </div>
+                    );
+                  })}
                   {selectedServiceName === "Ultrasound" && (
                     <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3">
                       <AlertCircle className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
@@ -423,7 +618,7 @@ export default function BookAppointmentClient({
                       <Loader2 className="w-4 h-4 animate-spin" />
                       Loading slots...
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                       {Array.from({ length: 18 }).map((_, i) => (
                         <div
                           key={i}
@@ -443,7 +638,7 @@ export default function BookAppointmentClient({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={fetchBookedSlots}
+                      onClick={() => fetchBookedSlots()}
                       className="border-red-200 text-red-600 hover:bg-red-50"
                     >
                       Try Again
@@ -455,30 +650,56 @@ export default function BookAppointmentClient({
                 {selectedDate && !isFetchingSlots && !slotFetchError && (
                   <>
                     {/* Slot count indicator */}
-                    <p className={cn("text-sm font-semibold mb-4", slotCountColor)}>
-                      {availableCount === 0
-                        ? "No slots available"
-                        : `${availableCount} slot${availableCount !== 1 ? "s" : ""} available`}
+                    <p className={cn("text-sm font-semibold mb-4", isDoctorOnLeave ? "text-amber-600" : slotCountColor)}>
+                      {isDoctorOnLeave 
+                        ? "Doctor is on leave"
+                        : availableCount === 0
+                          ? "No slots available"
+                          : `${availableCount} slot${availableCount !== 1 ? "s" : ""} available`}
                     </p>
 
                     {/* All slots taken message */}
                     {allSlotsTaken ? (
-                      <div className="flex flex-col items-center justify-center text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                        <AlertCircle className="w-8 h-8 text-slate-400 mb-2" />
-                        <p className="font-medium text-slate-700">
-                          No available slots for this date.
-                        </p>
-                        <p className="text-sm text-slate-500">
-                          Please select another date.
-                        </p>
-                      </div>
+                      isDoctorOnLeave ? (
+                        <div className="flex flex-col items-center justify-center text-center py-10 bg-amber-50 rounded-xl border border-dashed border-amber-200">
+                          <AlertCircle className="w-8 h-8 text-amber-500 mb-2" />
+                          <p className="font-medium text-amber-700">
+                            The doctor is on leave on this date.
+                          </p>
+                          <p className="text-sm text-amber-600">
+                            Please select another date.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                          <AlertCircle className="w-8 h-8 text-slate-400 mb-2" />
+                          <p className="font-medium text-slate-700">
+                            No available slots for this date.
+                          </p>
+                          <p className="text-sm text-slate-500">
+                            Please select another date.
+                          </p>
+                        </div>
+                      )
                     ) : (
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                         {currentSlots.map((slot) => {
                           const isTaken = bookedSlots.includes(slot);
+                          
+                          // Check if selected date is today in PHT
+                          const now = new Date();
+                          const formatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: 'numeric', day: 'numeric' });
+                          const parts = formatter.formatToParts(now);
+                          const phtYear = parseInt(parts.find(p => p.type === 'year')?.value || '0', 10);
+                          const phtMonth = parseInt(parts.find(p => p.type === 'month')?.value || '1', 10) - 1;
+                          const phtDay = parseInt(parts.find(p => p.type === 'day')?.value || '1', 10);
+                          
+                          const isToday = selectedDate.getFullYear() === phtYear && selectedDate.getMonth() === phtMonth && selectedDate.getDate() === phtDay;
+                          const isPassed = isToday && isTimeSlotPassedPHT(slot);
+
                           const isSelected = selectedTimeSlot === slot;
 
-                          if (isTaken) {
+                          if (isTaken || isPassed) {
                             return (
                               <div
                                 key={slot}
@@ -491,7 +712,7 @@ export default function BookAppointmentClient({
                               >
                                 <span className="text-sm font-medium">{slot}</span>
                                 <span className="text-[10px] mt-0.5 font-semibold uppercase tracking-wide text-slate-400">
-                                  Taken
+                                  {isTaken ? "Taken" : "Passed"}
                                 </span>
                               </div>
                             );
@@ -657,10 +878,15 @@ export default function BookAppointmentClient({
                 <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 space-y-4">
                   <div>
                     <p className="text-xs font-medium text-slate-500 mb-1">
-                      Full Name
+                      Patient
                     </p>
                     <p className="font-semibold text-slate-900">
-                      {patientInfo.name}
+                      {selectedSubProfileId
+                        ? (() => {
+                            const sp = subProfiles.find((p) => p.id === selectedSubProfileId);
+                            return sp ? `${sp.firstName} ${sp.lastName} (${sp.relationship})` : patientInfo.name;
+                          })()
+                        : patientInfo.name + " (Myself)"}
                     </p>
                   </div>
                   <div>

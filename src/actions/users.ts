@@ -37,6 +37,17 @@ export async function getStaffAndDoctors(page = 1, limit = 10, search = "") {
   };
 }
 
+export async function getAllDoctorsList() {
+  const session = await verifySession();
+  if (!session || session.role !== 'ADMIN') return [];
+  const doctors = await prisma.user.findMany({
+    where: { role: 'DOCTOR' },
+    select: { id: true, name: true },
+    orderBy: { name: 'asc' }
+  });
+  return doctors;
+}
+
 export async function createStaffOrDoctor(data: {
   name: string;
   email: string;
@@ -104,7 +115,9 @@ export async function updateStaffOrDoctor(
   id: string,
   data: {
     name?: string;
+    email?: string;
     phone?: string | null;
+    role?: "STAFF" | "DOCTOR";
     assignedServiceId?: string | null;
     password?: string;
     forceReassign?: boolean;
@@ -125,16 +138,64 @@ export async function updateStaffOrDoctor(
     });
     if (!user) throw new Error('User not found');
 
+    if (data.email) {
+      const emailTaken = await tx.user.findFirst({
+        where: { email: data.email, id: { not: id } }
+      });
+      if (emailTaken) {
+        throw new Error('Email is already in use by another account.');
+      }
+    }
+
+    if (user.role === 'DOCTOR' && data.role === 'STAFF') {
+      const pendingLeaves = await tx.doctorLeave.count({
+        where: { doctorId: id, status: 'PENDING' }
+      });
+      if (pendingLeaves > 0) {
+        throw new Error(`Cannot change role to STAFF: This doctor has ${pendingLeaves} pending leave request(s). Please resolve them first.`);
+      }
+
+      if (user.assignedService) {
+        // Appointments are tied to the schedule. We check appointments linked to this service that are CONFIRMED and >= today
+        // But the simplest way is to check if there are CONFIRMED appointments where doctor_name == user.name or service == user.assignedService.name
+        // Actually, if we just check CONFIRMED appointments >= today for this service:
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const upcomingAppts = await tx.appointment.count({
+          where: {
+            doctor_name: user.name,
+            status: "CONFIRMED",
+            schedule: { date: { gte: today } }
+          }
+        });
+
+        if (upcomingAppts > 0) {
+          throw new Error(`Cannot change role to STAFF: This doctor has ${upcomingAppts} upcoming confirmed appointment(s). Please reassign or cancel them first.`);
+        }
+      }
+    }
+
     const updatedUser = await tx.user.update({
       where: { id },
       data: {
         name: data.name,
+        ...(data.email ? { email: data.email } : {}),
+        ...(data.role ? { role: data.role } : {}),
         phone: data.phone ?? undefined,
         ...(passwordHash ? { password: passwordHash } : {}),
       },
     });
 
-    if (user.role === 'DOCTOR') {
+    if (user.role === 'DOCTOR' && updatedUser.role === 'STAFF') {
+      // Disconnect service completely
+      if (user.assignedService) {
+        await tx.service.update({
+          where: { id: user.assignedService.id },
+          data: { assigned_doctor_id: null, doctor_name: 'Unassigned' }
+        });
+      }
+    } else if (updatedUser.role === 'DOCTOR') {
       const oldServiceId = user.assignedService?.id;
       const newServiceId = data.assignedServiceId;
 
@@ -165,11 +226,35 @@ export async function updateStaffOrDoctor(
             doctor_name: updatedUser.name,
           },
         });
+
+        if (service) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          await tx.appointment.updateMany({
+            where: {
+              service: service.name,
+              status: "CONFIRMED",
+              schedule: { date: { gte: today } }
+            },
+            data: { doctor_name: updatedUser.name }
+          });
+        }
       } else if (newServiceId && newServiceId === oldServiceId) {
         // Same service, just update doctor_name in case the doctor's name was edited
-        await tx.service.update({
+        const service = await tx.service.update({
           where: { id: newServiceId },
           data: { doctor_name: updatedUser.name },
+        });
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        await tx.appointment.updateMany({
+          where: {
+            service: service.name,
+            status: "CONFIRMED",
+            schedule: { date: { gte: today } }
+          },
+          data: { doctor_name: updatedUser.name }
         });
       }
     }
@@ -198,14 +283,31 @@ export async function deleteUser(id: string) {
         include: { assignedService: true },
       });
 
-      if (user?.role === 'DOCTOR' && user.assignedService) {
-        await tx.service.update({
-          where: { id: user.assignedService.id },
-          data: {
-            assigned_doctor_id: null,
-            doctor_name: 'Unassigned',
-          },
+      if (user?.role === 'DOCTOR') {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const upcomingAppts = await tx.appointment.count({
+          where: {
+            doctor_name: user.name,
+            status: "CONFIRMED",
+            schedule: { date: { gte: today } }
+          }
         });
+
+        if (upcomingAppts > 0) {
+          throw new Error(`Cannot delete this doctor: There are ${upcomingAppts} upcoming confirmed appointment(s) assigned to them. Please reassign or cancel them first.`);
+        }
+
+        if (user.assignedService) {
+          await tx.service.update({
+            where: { id: user.assignedService.id },
+            data: {
+              assigned_doctor_id: null,
+              doctor_name: 'Unassigned',
+            },
+          });
+        }
       }
 
       const deletedUser = await tx.user.delete({

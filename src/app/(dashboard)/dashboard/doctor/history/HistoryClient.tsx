@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Search, Filter, CalendarDays, User, FileText, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { formatDatePHT } from "@/lib/utils";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 
 export function HistoryClient({ services }: { services: any[] }) {
   const router = useRouter();
@@ -15,31 +17,34 @@ export function HistoryClient({ services }: { services: any[] }) {
   const [endDate, setEndDate] = useState(searchParams.get("endDate") || "");
   const [service, setService] = useState(searchParams.get("service") || "");
   const [type, setType] = useState(searchParams.get("type") || "ALL");
+  const [page, setPage] = useState(parseInt(searchParams.get("page") || "1", 10));
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [items, setItems] = useState<any[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async (cursor: string | null = null, isBackground = false) => {
+  const fetchData = useCallback(async (currentPage: number = 1, isBackground = false) => {
     if (!isBackground) setIsLoading(true);
     if (!isBackground) setError(null);
     try {
       const params = new URLSearchParams(searchParams.toString());
       params.set("limit", "10");
-      if (cursor) {
-        params.set("cursor", cursor);
-      }
+      params.set("page", currentPage.toString());
       
       const res = await fetch(`/api/doctor/history?${params.toString()}`);
       if (!res.ok) throw new Error("Failed to fetch history");
       
       const result = await res.json();
       
-      setItems(prev => cursor ? [...prev, ...result.data] : result.data);
-      setNextCursor(result.nextCursor);
+      setItems(result.data);
+      setTotalPages(result.totalPages);
+      setTotalItems(result.total);
+      setPage(result.page);
     } catch (err: any) {
       if (!isBackground) setError(err.message || "An error occurred while fetching history.");
     } finally {
@@ -49,22 +54,16 @@ export function HistoryClient({ services }: { services: any[] }) {
 
   useEffect(() => {
     setItems([]);
-    setNextCursor(null);
-    fetchData(null);
+    fetchData(page);
     
-    // Background polling (only if we are on the first page to not wipe out load more data)
+    // Background polling (only if we are on the first page)
     const interval = setInterval(() => {
-      // We check if items.length <= 10. If it's more, it means they clicked Load More.
-      // If so, we don't auto-refresh so we don't mess up their scrolling view.
-      setItems((currentItems) => {
-        if (currentItems.length <= 10) {
-          fetchData(null, true);
-        }
-        return currentItems;
-      });
+      if (page === 1) {
+        fetchData(1, true);
+      }
     }, 10000);
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [fetchData, page]);
 
   const handleApplyFilters = () => {
     const params = new URLSearchParams();
@@ -78,8 +77,96 @@ export function HistoryClient({ services }: { services: any[] }) {
   };
 
   const handleClearFilters = () => {
-    setSearch(""); setStartDate(""); setEndDate(""); setService(""); setType("ALL");
+    setSearch(""); setStartDate(""); setEndDate(""); setService(""); setType("ALL"); setPage(1);
     router.push(`/dashboard/doctor/history`);
+  };
+
+  const handleExportPDF = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams(searchParams.toString());
+      // The export API handles fetching all without pagination limits
+      const res = await fetch(`/api/doctor/history/export?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch export data");
+      const exportData = await res.json();
+
+      if (exportData.length === 0) {
+        alert("No records to export based on current filters.");
+        setIsExporting(false);
+        return;
+      }
+
+      const doc = new jsPDF();
+      
+      // Load Logo
+      const img = new Image();
+      img.src = '/rhu1.png';
+      await new Promise((resolve) => {
+        img.onload = resolve;
+        img.onerror = resolve; // Continue even if logo fails
+      });
+
+      // Add Logo (x: 14, y: 10, width: 20, height: 20)
+      if (img.width > 0) {
+        doc.addImage(img, 'PNG', 14, 10, 20, 20);
+      }
+
+      // Header Texts
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("RURAL HEALTH UNIT - AGOO", 38, 18);
+      
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text("Agoo, La Union, Philippines", 38, 23);
+      
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text("Consultation History Report", 14, 40);
+      
+      // Metadata
+      const displayedService = service || (exportData.length > 0 ? exportData[0].service : "All Services");
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(80);
+      doc.text(`Service: ${displayedService}`, 14, 47);
+      doc.text(`Generated on: ${format(new Date(), "MMM d, yyyy h:mm a")}`, 14, 52);
+      doc.text(`Total Records: ${exportData.length}`, 14, 57);
+
+      const tableColumn = ["Date", "Patient Name", "Type", "Diagnosis", "Follow-up"];
+      const tableRows: string[][] = [];
+
+      exportData.forEach((item: any) => {
+        const isWalkIn = item.type === "WALK_IN";
+        const patientName = isWalkIn ? item.walkInPatient?.fullName : item.user?.name;
+        const cons = item.consultation;
+        const dateStr = formatDatePHT(item.created_at, "MMM d, yyyy");
+        const followUpStr = cons?.followUpDate ? formatDatePHT(cons.followUpDate, "MMM d, yyyy") : "N/A";
+        
+        tableRows.push([
+          dateStr,
+          patientName || "Unknown",
+          item.type.replace("_", "-"),
+          cons?.diagnosis || "N/A",
+          followUpStr
+        ]);
+      });
+
+      autoTable(doc, {
+        head: [tableColumn],
+        body: tableRows,
+        startY: 65,
+        theme: "grid",
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [22, 163, 74] }, // Tailwind green-600
+      });
+
+      doc.save(`Consultation_History_${format(new Date(), "yyyyMMdd")}.pdf`);
+    } catch (err: any) {
+      alert("Failed to export PDF: " + err.message);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const getAge = (birthday?: Date | string | null) => {
@@ -157,13 +244,24 @@ export function HistoryClient({ services }: { services: any[] }) {
             </select>
           </div>
         </div>
-        <div className="flex justify-end gap-3 pt-2">
-          <button onClick={handleClearFilters} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors">
-            Clear Filters
+        <div className="flex justify-between items-center pt-2">
+          <button 
+            onClick={handleExportPDF} 
+            disabled={isExporting || items.length === 0}
+            className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-700 bg-white rounded-md text-sm font-medium hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4 text-green-600" />}
+            {isExporting ? "Exporting..." : "Export to PDF"}
           </button>
-          <button onClick={handleApplyFilters} className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 transition-colors">
-            Apply Filters
-          </button>
+          
+          <div className="flex gap-3">
+            <button onClick={handleClearFilters} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors">
+              Clear Filters
+            </button>
+            <button onClick={handleApplyFilters} className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 transition-colors">
+              Apply Filters
+            </button>
+          </div>
         </div>
       </div>
 
@@ -307,16 +405,60 @@ export function HistoryClient({ services }: { services: any[] }) {
           </div>
         )}
 
-        {nextCursor && (
-          <div className="flex justify-center pt-6 pb-4">
-            <button
-              onClick={() => fetchData(nextCursor)}
-              disabled={isLoading}
-              className="flex items-center gap-2 px-6 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-full text-sm font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-            >
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {isLoading ? "Loading..." : "Load More"}
-            </button>
+        {totalPages > 1 && (
+          <div className="flex justify-between items-center pt-6 pb-4">
+            <span className="text-sm text-slate-500">
+              Showing page {page} of {totalPages} ({totalItems} total)
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1 || isLoading}
+                className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              >
+                Previous
+              </button>
+              
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
+                  // Only show current, first, last, and neighbors
+                  if (
+                    p === 1 || 
+                    p === totalPages || 
+                    (p >= page - 1 && p <= page + 1)
+                  ) {
+                    return (
+                      <button
+                        key={p}
+                        onClick={() => setPage(p)}
+                        disabled={isLoading}
+                        className={`w-9 h-9 flex items-center justify-center rounded-md text-sm font-medium transition-colors ${
+                          page === p 
+                            ? "bg-green-600 text-white shadow-sm" 
+                            : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    );
+                  } else if (
+                    p === page - 2 || 
+                    p === page + 2
+                  ) {
+                    return <span key={p} className="text-slate-400 px-1">...</span>;
+                  }
+                  return null;
+                })}
+              </div>
+
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages || isLoading}
+                className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { createSession } from '@/lib/session';
+import { createAdminNotification, createStaffNotification } from '@/lib/notifications';
 
 export async function loginUser(email: string, password: string) {
   try {
@@ -93,6 +94,9 @@ export async function registerPatient(formData: any) {
 
     // Create session
     await createSession(newUser.id, newUser.role, newUser.name, newUser.email || '');
+
+    // Notify Admins only
+    await createAdminNotification(`New patient registered: ${newUser.name}`);
 
     return { success: true, redirect: '/dashboard/patient/itr' };
 

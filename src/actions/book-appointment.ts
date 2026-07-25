@@ -3,7 +3,8 @@
 import { prisma } from "@/lib/prisma";
 import { verifySession } from "@/lib/session";
 import { revalidatePath } from "next/cache";
-import { formatDatePHT } from "@/lib/utils";
+import { formatDatePHT, getTodayPHT, isTimeSlotPassedPHT } from "@/lib/utils";
+import { createAdminNotification, createStaffNotification } from "@/lib/notifications";
 
 export async function getDoctorForService(serviceName: string) {
   const service = await prisma.service.findUnique({
@@ -18,6 +19,30 @@ export async function checkServiceAvailability(serviceName: string) {
   return !!doctor;
 }
 
+export async function getUpcomingLeavesForService(serviceName: string) {
+  try {
+    const doctor = await getDoctorForService(serviceName);
+    if (!doctor) return [];
+
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    const leaves = await prisma.doctorLeave.findMany({
+      where: {
+        doctorId: doctor.id,
+        status: "APPROVED",
+        endDate: { gte: today },
+      },
+      orderBy: { startDate: "asc" },
+    });
+
+    return leaves;
+  } catch (error) {
+    console.error("Error fetching upcoming leaves:", error);
+    return [];
+  }
+}
+
 /**
  * Returns the list of ALREADY BOOKED time slot strings for the given date + service.
  * The frontend generates the full 18 slots dynamically and uses this list to mark
@@ -26,7 +51,7 @@ export async function checkServiceAvailability(serviceName: string) {
 export async function getBookedSlots(
   dateString: string,
   serviceName: string
-): Promise<{ bookedSlots: string[]; error?: string }> {
+): Promise<{ bookedSlots: string[]; isLeave?: boolean; error?: string }> {
   try {
     // Prisma @db.Date columns expect UTC midnight (T00:00:00.000Z).
     // Using T12:00:00Z will fail the unique constraint lookup because it doesn't match the DB exact timestamp!
@@ -66,7 +91,22 @@ export async function getBookedSlots(
 
     const bookedSlots = [...new Set([...appointmentSlots, ...disabledSlotStrings])];
 
-    return { bookedSlots };
+    let isLeave = false;
+    if (service.assigned_doctor_id) {
+      const leave = await prisma.doctorLeave.findFirst({
+        where: {
+          doctorId: service.assigned_doctor_id,
+          status: "APPROVED",
+          startDate: { lte: date },
+          endDate: { gte: date },
+        }
+      });
+      if (leave) {
+        isLeave = true;
+      }
+    }
+
+    return { bookedSlots, isLeave };
   } catch (error) {
     console.error("Error fetching booked slots:", error);
     return {
@@ -81,6 +121,7 @@ export async function createAppointment(data: {
   date: string;
   timeSlot: string;
   notes?: string;
+  subProfileId?: string; // null/undefined = booking for the account holder themselves
 }) {
   try {
     // Use the verified JWT session for auth (the old "patientId" cookie does not exist)
@@ -90,9 +131,25 @@ export async function createAppointment(data: {
     }
     const patientId = session.userId;
 
-    // Prisma @db.Date columns expect UTC midnight (T00:00:00.000Z).
-    // Using T12:00:00Z will fail the unique constraint lookup because it doesn't match the DB exact timestamp!
     const date = new Date(`${data.date}T00:00:00Z`);
+
+    // Prevent booking a past time slot if the date is today
+    const phtToday = getTodayPHT();
+    if (date.getTime() < phtToday.getTime()) {
+      return {
+        success: false,
+        error: "Cannot book an appointment for a past date."
+      };
+    }
+    
+    if (date.getTime() === phtToday.getTime()) {
+      if (isTimeSlotPassedPHT(data.timeSlot)) {
+        return {
+          success: false,
+          error: "This time slot has already passed. Please choose a future time slot."
+        };
+      }
+    }
 
     const assignedDoctor = await getDoctorForService(data.service);
     if (!assignedDoctor) {
@@ -104,13 +161,16 @@ export async function createAppointment(data: {
     const doctorName = assignedDoctor.name;
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Ensure a schedule row exists for this date
       let schedule = await tx.schedule.findUnique({ where: { date } });
       if (!schedule) {
         schedule = await tx.schedule.create({
           data: { date, max_capacity: 50, booked_count: 0 },
         });
       }
+
+      // 1b. Concurrency Guard: Lock the schedule row. This forces any parallel transaction 
+      // trying to book on the same day to wait until this transaction completes.
+      await tx.$executeRaw`SELECT 1 FROM "Schedule" WHERE id = ${schedule.id} FOR UPDATE`;
 
       // 2. Race-condition guard: re-check the slot is still free
       const existingAppt = await tx.appointment.findFirst({
@@ -145,10 +205,13 @@ export async function createAppointment(data: {
         }
       }
 
-      // 2b. Prevent duplicate: same patient booking same service on same date
+      // 2b. Prevent duplicate: same profile booking same service on same date
+      // If subProfileId is provided, guard is per sub-profile.
+      // If null, guard is for the account holder (user_id with no subProfileId).
       const duplicateBooking = await tx.appointment.findFirst({
         where: {
           user_id: patientId,
+          subProfileId: data.subProfileId ?? null,
           schedule_id: schedule.id,
           service: data.service,
           status: { notIn: ["CANCELLED"] },
@@ -157,7 +220,7 @@ export async function createAppointment(data: {
 
       if (duplicateBooking) {
         throw new Error(
-          "You already have an appointment for this service on this date. Please choose a different date or service."
+          "This profile already has an appointment for this service on this date. Please choose a different date or service."
         );
       }
 
@@ -173,6 +236,7 @@ export async function createAppointment(data: {
           time_slot: data.timeSlot,
           room: "TBD",
           notes: data.notes || null,
+          subProfileId: data.subProfileId ?? null,
         },
       });
 
@@ -193,6 +257,22 @@ export async function createAppointment(data: {
           isRead: false,
         },
       });
+
+      // 6. Notify Admins, Staff, and assigned Doctor
+      await createAdminNotification(
+        `New online appointment booked for ${data.service} on ${formattedDate} at ${data.timeSlot}.`,
+        appointment.id
+      );
+      await createStaffNotification(
+        `New online appointment booked for ${data.service} on ${formattedDate} at ${data.timeSlot}.`,
+        appointment.id
+      );
+      const { createDoctorNotification } = await import("@/lib/notifications");
+      await createDoctorNotification(
+        `New appointment booked for your service on ${formattedDate} at ${data.timeSlot}.`,
+        assignedDoctor.id,
+        appointment.id
+      );
 
       return appointment;
     });

@@ -37,6 +37,7 @@ export type DaySummary = {
   booked: number;
   disabled: number;
   total: number;
+  isLeave?: boolean;
 };
 
 export async function getMonthlySlotSummary(
@@ -86,6 +87,31 @@ export async function getMonthlySlotSummary(
       const day = String(d.getDate()).padStart(2, '0');
       return `${y}-${m}-${day}`;
     };
+
+    // Fetch approved leaves to check for "Doctor on Leave" status
+    const leaveDateSet = new Set<string>();
+    if (service.assigned_doctor_id) {
+      const approvedLeaves = await prisma.doctorLeave.findMany({
+        where: {
+          doctorId: service.assigned_doctor_id,
+          status: "APPROVED",
+          startDate: { lte: endDate },
+          endDate: { gte: startDate },
+        }
+      });
+
+      for (const leave of approvedLeaves) {
+        let curr = new Date(leave.startDate);
+        const end = new Date(leave.endDate);
+        while (curr <= end) {
+          const y = curr.getUTCFullYear();
+          const m = String(curr.getUTCMonth() + 1).padStart(2, '0');
+          const d = String(curr.getUTCDate()).padStart(2, '0');
+          leaveDateSet.add(`${y}-${m}-${d}`);
+          curr.setUTCDate(curr.getUTCDate() + 1);
+        }
+      }
+    }
 
     // Group counts by date
     const disabledCountByDate: Record<string, number> = {};
@@ -137,12 +163,15 @@ export async function getMonthlySlotSummary(
       const totalSlots = isUltrasound ? config.ultrasoundSlots.length : config.allSlots.length;
       const available = Math.max(0, totalSlots - disabled - booked);
 
+      const isLeave = leaveDateSet.has(dStr);
+
       summary.push({
         date: dStr,
         available,
         booked,
         disabled,
         total: totalSlots,
+        isLeave,
       });
     }
 
@@ -235,8 +264,55 @@ export async function toggleSlotStatus(
     const actorId = session.userId;
     const date = new Date(`${dateString}T00:00:00Z`);
 
+    // Prevent modifying slots in the past
+    const { getTodayPHT } = await import("@/lib/utils");
+    const today = getTodayPHT();
+    if (date.getTime() < today.getTime()) {
+      throw new Error("Cannot modify slot availability for past dates.");
+    }
+
+    if (date.getTime() === today.getTime()) {
+      const match = timeSlot.match(/^(\d{2}):(\d{2})\s(AM|PM)$/);
+      if (match) {
+        let hours = parseInt(match[1], 10);
+        const minutes = parseInt(match[2], 10);
+        const ampm = match[3];
+        if (ampm === "PM" && hours !== 12) hours += 12;
+        if (ampm === "AM" && hours === 12) hours = 0;
+        
+        const now = new Date();
+        const phtNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+        const currentHours = phtNow.getUTCHours();
+        const currentMinutes = phtNow.getUTCMinutes();
+        
+        const slotTimeInMinutes = hours * 60 + minutes;
+        const currentTimeInMinutes = currentHours * 60 + currentMinutes;
+        
+        if (slotTimeInMinutes < currentTimeInMinutes) {
+          throw new Error("Cannot modify slot availability for past time slots today.");
+        }
+      }
+    }
+
     await prisma.$transaction(async (tx) => {
+      const service = await tx.service.findUnique({ where: { id: serviceId } });
+      if (!service) throw new Error("Service not found");
+
       if (action === "Disabled") {
+        // Guard against disabling booked slots
+        const existingAppt = await tx.appointment.findFirst({
+          where: {
+            service: service.name,
+            time_slot: timeSlot,
+            status: "CONFIRMED",
+            schedule: { date }
+          }
+        });
+
+        if (existingAppt) {
+          throw new Error("Cannot disable this slot: A patient is already booked here.");
+        }
+
         // Create DisabledSlot
         const slot = await tx.disabledSlot.upsert({
           where: {
@@ -275,6 +351,7 @@ export async function toggleSlotStatus(
           serviceId
         });
       }
+
     });
     
     revalidatePath("/dashboard/staff/slots");

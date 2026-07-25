@@ -20,16 +20,18 @@ export async function GET(req: Request) {
       type: searchParams.get("type") || undefined,
     };
 
-    const cursor = searchParams.get("cursor") || undefined;
+    const parsedPage = parseInt(searchParams.get("page") || "1", 10);
+    const page = Number.isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage;
+    
     const parsedLimit = parseInt(searchParams.get("limit") || "10", 10);
     const limit = Number.isNaN(parsedLimit) ? 10 : parsedLimit;
     const safeLimit = Math.min(limit, 50);
 
-    const result = await getConsultationHistory(doctorId, filters, cursor, safeLimit);
+    const result = await getConsultationHistory(doctorId, filters, page, safeLimit);
 
     return NextResponse.json(result);
   } catch (error) {
     console.error("API Error fetching history:", error);
-    return NextResponse.json({ data: [], nextCursor: null }, { status: 500 });
+    return NextResponse.json({ data: [], total: 0, totalPages: 0, page: 1 }, { status: 500 });
   }
 }

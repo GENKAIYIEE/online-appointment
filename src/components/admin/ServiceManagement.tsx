@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { 
   Stethoscope, 
   Trash2, 
+  Pencil,
   Plus, 
   AlertCircle, 
   RefreshCw 
@@ -45,6 +46,11 @@ export function ServiceManagement() {
   // Form State
   const [newServiceName, setNewServiceName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Edit State
+  const [editServiceId, setEditServiceId] = useState<string | null>(null);
+  const [editServiceName, setEditServiceName] = useState("");
+  const [isUpdating, setIsUpdating] = useState(false);
 
   // Delete State
   const [deleteServiceId, setDeleteServiceId] = useState<string | null>(null);
@@ -112,6 +118,36 @@ export function ServiceManagement() {
       toast.error("An error occurred");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editServiceId || !editServiceName.trim()) {
+      toast.error("Service name is required");
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const res = await fetch(`/api/admin/services/${editServiceId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editServiceName.trim() })
+      });
+
+      if (res.ok) {
+        toast.success("Service updated successfully!");
+        setEditServiceId(null);
+        fetchData();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to update service");
+      }
+    } catch (e) {
+      toast.error("An error occurred");
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -231,6 +267,17 @@ export function ServiceManagement() {
                             <Button 
                               variant="ghost" 
                               size="sm" 
+                              className="text-slate-500 hover:bg-slate-100"
+                              onClick={() => {
+                                setEditServiceId(service.id);
+                                setEditServiceName(service.name);
+                              }}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
                               className="text-red-600 hover:bg-red-50 hover:text-red-700"
                               onClick={() => setDeleteServiceId(service.id)}
                             >
@@ -265,6 +312,34 @@ export function ServiceManagement() {
               {isDeleting ? "Deleting..." : "Delete Service"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Modal */}
+      <Dialog open={!!editServiceId} onOpenChange={(open) => !open && setEditServiceId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Service</DialogTitle>
+            <DialogDescription>
+              Rename this service. This will update all existing appointments to reflect the new name.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUpdateService} className="space-y-4">
+            <div className="space-y-2 pt-4">
+              <label className="text-sm font-medium text-slate-700">Service Name <span className="text-red-500">*</span></label>
+              <Input 
+                value={editServiceName}
+                onChange={(e) => setEditServiceName(e.target.value)}
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditServiceId(null)}>Cancel</Button>
+              <Button type="submit" disabled={isUpdating} className="bg-emerald-600 hover:bg-emerald-700">
+                {isUpdating ? "Saving..." : "Save Changes"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

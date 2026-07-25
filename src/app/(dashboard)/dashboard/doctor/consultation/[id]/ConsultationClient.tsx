@@ -110,7 +110,7 @@ function NotProvided() {
 
 // ── ITR Sections Renderer ────────────────────────────────────────────────────
 
-function OnlinePatientITR({ user, itr }: { user: any; itr: any }) {
+function OnlinePatientITR({ user, itr, consultation }: { user: any; itr: any; consultation: any }) {
   if (!itr) {
     return (
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 flex items-start gap-3">
@@ -131,6 +131,19 @@ function OnlinePatientITR({ user, itr }: { user: any; itr: any }) {
   const isAboveTwoYears = (user?.birthday)
     ? (new Date().getFullYear() - new Date(user.birthday).getFullYear()) > 2
     : true;
+
+  // Merge staff-recorded vitals (if any) with ITR vitals
+  const vitals = consultation?.vitalSigns || {};
+  const bp = vitals.bloodPressure || itr.bloodPressure;
+  const temp = vitals.temperature || itr.temperature;
+  const hr = vitals.heartRate || itr.heartRate;
+  const rr = vitals.respiratoryRate || itr.respiratoryRate;
+  const o2 = vitals.o2Sat || itr.o2Sat;
+  const ht = vitals.heightCm || itr.heightCm;
+  const wt = vitals.weightKg || itr.weightKg;
+  const bt = itr.bloodType;
+
+  const staffChiefComplaint = consultation?.chiefComplaint;
 
   return (
     <div className="space-y-4">
@@ -174,17 +187,16 @@ function OnlinePatientITR({ user, itr }: { user: any; itr: any }) {
 
       {/* SECTION 3: Vital Signs */}
       <ITRSection title="Section 3 — Vital Signs" icon={<Heart className="w-4 h-4" />}>
-        {(itr.bloodPressure || itr.temperature || itr.heartRate || itr.respiratoryRate ||
-          itr.o2Sat || itr.heightCm || itr.weightKg || itr.bloodType) ? (
+        {(bp || temp || hr || rr || o2 || ht || wt || bt) ? (
           <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-            <ITRField label="Blood Pressure (mmHg)" value={na(itr.bloodPressure)} />
-            <ITRField label="Temperature (°C)" value={na(itr.temperature)} />
-            <ITRField label="Heart Rate (bpm)" value={na(itr.heartRate)} />
-            <ITRField label="Respiratory Rate (bpm)" value={na(itr.respiratoryRate)} />
-            <ITRField label="O₂ Sat (%)" value={na(itr.o2Sat)} />
-            <ITRField label="Height (cm)" value={itr.heightCm != null ? `${itr.heightCm} cm` : "N/A"} />
-            <ITRField label="Weight (kg)" value={itr.weightKg != null ? `${itr.weightKg} kg` : "N/A"} />
-            <ITRField label="Blood Type" value={na(itr.bloodType)} />
+            <ITRField label="Blood Pressure (mmHg)" value={na(bp)} />
+            <ITRField label="Temperature (°C)" value={na(temp)} />
+            <ITRField label="Heart Rate (bpm)" value={na(hr)} />
+            <ITRField label="Respiratory Rate (bpm)" value={na(rr)} />
+            <ITRField label="O₂ Sat (%)" value={na(o2)} />
+            <ITRField label="Height (cm)" value={ht != null ? `${ht} cm` : "N/A"} />
+            <ITRField label="Weight (kg)" value={wt != null ? `${wt} kg` : "N/A"} />
+            <ITRField label="Blood Type" value={na(bt)} />
             {!isAboveTwoYears && (
               <ITRField label="MUAC" value={itr.muac != null ? `${itr.muac} cm` : "N/A"} />
             )}
@@ -196,11 +208,14 @@ function OnlinePatientITR({ user, itr }: { user: any; itr: any }) {
 
       {/* SECTION 4: Chief Complaints */}
       <ITRSection title="Section 4 — Chief Complaints" icon={<ClipboardList className="w-4 h-4" />}>
-        {chiefComplaints.length > 0 || itr.otherComplaints || itr.medicationsTaken || itr.prescriptionRefill ? (
+        {chiefComplaints.length > 0 || itr.otherComplaints || itr.medicationsTaken || itr.prescriptionRefill || staffChiefComplaint ? (
           <div className="space-y-3">
+            {staffChiefComplaint && (
+              <ITRField label="Staff Noted Complaint (Triage)" value={staffChiefComplaint} fullWidth />
+            )}
             {chiefComplaints.length > 0 && (
               <div>
-                <p className="text-xs text-slate-500 uppercase font-medium mb-2">Checked Complaints</p>
+                <p className="text-xs text-slate-500 uppercase font-medium mb-2">Checked Complaints (ITR)</p>
                 <div className="flex flex-wrap gap-1.5">
                   {chiefComplaints.map((c: string) => <GreenBadge key={c} label={c} />)}
                 </div>
@@ -426,29 +441,59 @@ export function ConsultationClient({ appointment }: { appointment: any }) {
         {/* LEFT COL: Patient ITR */}
         <div className="space-y-4 min-h-0">
           {type === "WALK_IN" ? (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="border-b border-green-100 bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-3 flex items-center gap-2">
-                <User className="w-4 h-4 text-white/80" />
-                <h3 className="font-semibold text-white text-sm tracking-wide">Patient Information</h3>
-              </div>
-              <div className="p-4 space-y-4">
-                <div className="bg-amber-50 border border-amber-100 rounded-lg p-4 text-sm text-amber-800 flex items-start gap-3">
-                  <Info className="w-5 h-5 shrink-0 mt-0.5" />
-                  <p>This is a walk-in patient. The hard copy ITR form contains their full medical history and is currently with you.</p>
+            <div className="space-y-4">
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="border-b border-green-100 bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-3 flex items-center gap-2">
+                  <User className="w-4 h-4 text-white/80" />
+                  <h3 className="font-semibold text-white text-sm tracking-wide">Patient Information</h3>
                 </div>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                  <ITRField label="Full Name" value={appointment.walkInPatient?.fullName} fullWidth />
-                  <ITRField label="Age" value={`${appointment.walkInPatient?.age} yrs`} />
-                  <ITRField label="Sex" value={na(appointment.walkInPatient?.sex)} />
-                  <ITRField label="Contact" value={na(appointment.walkInPatient?.contactNumber)} />
-                  <ITRField label="Address" value={na(appointment.walkInPatient?.address)} fullWidth />
-                  <ITRField label="Service" value={na(appointment.service)} />
-                  <ITRField label="Time Slot" value={na(appointment.time_slot)} />
+                <div className="p-4 space-y-4">
+                  <div className="bg-amber-50 border border-amber-100 rounded-lg p-4 text-sm text-amber-800 flex items-start gap-3">
+                    <Info className="w-5 h-5 shrink-0 mt-0.5" />
+                    <p>This is a walk-in patient. The hard copy ITR form contains their full medical history and is currently with you.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                    <ITRField label="Full Name" value={appointment.walkInPatient?.fullName} fullWidth />
+                    <ITRField label="Age" value={`${appointment.walkInPatient?.age} yrs`} />
+                    <ITRField label="Sex" value={na(appointment.walkInPatient?.sex)} />
+                    <ITRField label="Contact" value={na(appointment.walkInPatient?.contactNumber)} />
+                    <ITRField label="Address" value={na(appointment.walkInPatient?.address)} fullWidth />
+                    <ITRField label="Service" value={na(appointment.service)} />
+                    <ITRField label="Time Slot" value={na(appointment.time_slot)} />
+                  </div>
                 </div>
               </div>
+
+              {/* WALK-IN VITALS */}
+              {(appointment.consultation?.vitalSigns || appointment.consultation?.chiefComplaint) && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-4">
+                  <div className="border-b border-green-100 bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-3 flex items-center gap-2">
+                    <Heart className="w-4 h-4 text-white/80" />
+                    <h3 className="font-semibold text-white text-sm tracking-wide">Triage / Vitals</h3>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    {appointment.consultation?.chiefComplaint && (
+                      <div className="mb-4">
+                        <ITRField label="Chief Complaint" value={appointment.consultation.chiefComplaint} fullWidth />
+                      </div>
+                    )}
+                    {appointment.consultation?.vitalSigns && (
+                      <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                        <ITRField label="Blood Pressure (mmHg)" value={na((appointment.consultation.vitalSigns as any).bloodPressure)} />
+                        <ITRField label="Temperature (°C)" value={na((appointment.consultation.vitalSigns as any).temperature)} />
+                        <ITRField label="Heart Rate (bpm)" value={na((appointment.consultation.vitalSigns as any).heartRate)} />
+                        <ITRField label="Respiratory Rate (bpm)" value={na((appointment.consultation.vitalSigns as any).respiratoryRate)} />
+                        <ITRField label="O₂ Sat (%)" value={na((appointment.consultation.vitalSigns as any).o2Sat)} />
+                        <ITRField label="Height (cm)" value={(appointment.consultation.vitalSigns as any).heightCm != null ? `${(appointment.consultation.vitalSigns as any).heightCm} cm` : "N/A"} />
+                        <ITRField label="Weight (kg)" value={(appointment.consultation.vitalSigns as any).weightKg != null ? `${(appointment.consultation.vitalSigns as any).weightKg} kg` : "N/A"} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
-            <OnlinePatientITR user={appointment.user} itr={appointment.user?.itr} />
+            <OnlinePatientITR user={appointment.user} itr={appointment.user?.itr} consultation={appointment.consultation} />
           )}
         </div>
 

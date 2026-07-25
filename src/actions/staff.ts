@@ -2,9 +2,10 @@
 
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
-import { getTodayPHT } from "@/lib/utils";
+import { getTodayPHT, isTimeSlotPassedPHT } from "@/lib/utils";
 import { verifySession } from "@/lib/session";
 import { createAuditLog } from "@/lib/audit";
+import { createAdminNotification } from "@/lib/notifications";
 
 export async function getDoctorForServiceById(serviceId: string) {
   const service = await prisma.service.findUnique({
@@ -22,53 +23,62 @@ export async function getStaffSummaryCards() {
 
     // Filter by schedule.date (the appointment date), NOT created_at (booking timestamp)
     // This avoids timezone bugs where walk-ins created before noon UTC are missed.
-    const todayWalkIns = await prisma.appointment.findMany({
+    const todayAppointments = await prisma.appointment.findMany({
       where: {
-        type: "WALK_IN",
         schedule: {
           date: { gte: today, lt: tomorrow },
         },
         status: { notIn: ["CANCELLED"] },
       },
-      include: { walkInPatient: true },
+      include: { walkInPatient: true, user: true, subProfile: true },
     });
 
-    const totalWalkIns = todayWalkIns.length;
+    const totalAppointments = todayAppointments.length;
     let maleCount = 0;
     let femaleCount = 0;
 
-    for (const appt of todayWalkIns) {
-      if (appt.walkInPatient?.sex === "Male") maleCount++;
-      if (appt.walkInPatient?.sex === "Female") femaleCount++;
+    for (const appt of todayAppointments) {
+      const sex = appt.walkInPatient?.sex || appt.user?.gender || appt.subProfile?.gender;
+      if (sex === "Male") maleCount++;
+      if (sex === "Female") femaleCount++;
     }
 
-    return { totalWalkIns, maleCount, femaleCount };
+    return { totalAppointments, maleCount, femaleCount };
   } catch (error) {
     console.error("Error fetching staff summary:", error);
-    return { totalWalkIns: 0, maleCount: 0, femaleCount: 0 };
+    return { totalAppointments: 0, maleCount: 0, femaleCount: 0 };
   }
 }
 
-export async function getTodayWalkIns(page: number = 1, limit: number = 10) {
+export async function getTodayAppointments(page: number = 1, limit: number = 10) {
   try {
     const today = getTodayPHT();
     const tomorrow = new Date(today);
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 
-    const whereClause = {
-      type: "WALK_IN" as const,
-      schedule: {
-        date: { gte: today, lt: tomorrow },
-      },
-    };
-
     const skip = (page - 1) * limit;
 
     const [totalRecords, appointments] = await Promise.all([
-      prisma.appointment.count({ where: whereClause }),
+      prisma.appointment.count({ 
+        where: {
+          schedule: { date: { gte: today, lt: tomorrow } },
+          status: { notIn: ["CANCELLED"] },
+          OR: [
+            { consultation: { isNot: null } },
+            { type: "WALK_IN" }
+          ]
+        }
+      }),
       prisma.appointment.findMany({
-        where: whereClause,
-        include: { walkInPatient: true, schedule: true },
+        where: {
+          schedule: { date: { gte: today, lt: tomorrow } },
+          status: { notIn: ["CANCELLED"] },
+          OR: [
+            { consultation: { isNot: null } },
+            { type: "WALK_IN" }
+          ]
+        },
+        include: { walkInPatient: true, user: true, subProfile: true, schedule: true },
         orderBy: { created_at: "asc" },
         skip,
         take: limit,
@@ -78,22 +88,110 @@ export async function getTodayWalkIns(page: number = 1, limit: number = 10) {
     const totalPages = Math.ceil(totalRecords / limit);
 
     return {
-      data: appointments.map((appt) => ({
-        id: appt.id,
-        patientName: appt.walkInPatient?.fullName || "N/A",
-        age: appt.walkInPatient?.age ?? null,
-        sex: appt.walkInPatient?.sex || "N/A",
-        service: appt.service || "N/A",
-        doctor: appt.doctor_name || "N/A",
-        time: appt.time_slot || "N/A",
-        status: appt.status,
-        date: appt.schedule_id,
-      })),
+      data: appointments.map((appt) => {
+        let displayPatientName = "Unknown";
+        let displaySex = "N/A";
+        let displayAge = null;
+        
+        if (appt.type === "WALK_IN") {
+          displayPatientName = appt.walkInPatient?.fullName ?? "Unknown";
+          displaySex = appt.walkInPatient?.sex ?? "N/A";
+          displayAge = appt.walkInPatient?.age ?? null;
+        } else if (appt.subProfile) {
+          displayPatientName = `${appt.subProfile.firstName} ${appt.subProfile.lastName}`;
+          displaySex = appt.subProfile.gender ?? "N/A";
+        } else {
+          displayPatientName = appt.user?.name ?? "Unknown";
+          displaySex = appt.user?.gender ?? "N/A";
+        }
+
+        return {
+          id: appt.id,
+          patientName: displayPatientName,
+          age: displayAge,
+          sex: displaySex,
+          service: appt.service || "N/A",
+          doctor: appt.doctor_name || "N/A",
+          time: appt.time_slot || "N/A",
+          status: appt.status,
+          date: appt.schedule?.date?.toISOString() ?? null,
+          type: appt.type,
+        };
+      }),
       totalPages,
       currentPage: page,
     };
   } catch (error) {
-    console.error("Error fetching today walk-ins:", error);
+    console.error("Error fetching today appointments:", error);
+    return { data: [], totalPages: 0, currentPage: 1 };
+  }
+}
+
+export async function getAwaitingVitalsAppointments(page: number = 1, limit: number = 10) {
+  try {
+    const today = getTodayPHT();
+    const tomorrow = new Date(today);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+
+    const skip = (page - 1) * limit;
+
+    const [totalRecords, appointments] = await Promise.all([
+      prisma.appointment.count({ 
+        where: {
+          schedule: { date: { gte: today, lt: tomorrow } },
+          status: { notIn: ["CANCELLED", "NO_SHOW"] },
+          consultation: { is: null },
+          type: "ONLINE",
+        }
+      }),
+      prisma.appointment.findMany({
+        where: {
+          schedule: { date: { gte: today, lt: tomorrow } },
+          status: { notIn: ["CANCELLED", "NO_SHOW"] },
+          consultation: { is: null },
+          type: "ONLINE",
+        },
+        include: { walkInPatient: true, user: true, subProfile: true, schedule: true },
+        orderBy: { time_slot: "asc" },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    const totalPages = Math.ceil(totalRecords / limit);
+
+    return {
+      data: appointments.map((appt) => {
+        let displayPatientName = "Unknown";
+        let displaySex = "N/A";
+        let displayAge = null;
+        
+        if (appt.subProfile) {
+          displayPatientName = `${appt.subProfile.firstName} ${appt.subProfile.lastName}`;
+          displaySex = appt.subProfile.gender ?? "N/A";
+        } else {
+          displayPatientName = appt.user?.name ?? "Unknown";
+          displaySex = appt.user?.gender ?? "N/A";
+        }
+
+        return {
+          id: appt.id,
+          patientName: displayPatientName,
+          age: displayAge,
+          sex: displaySex,
+          service: appt.service || "N/A",
+          doctor: appt.doctor_name || "N/A",
+          time: appt.time_slot || "N/A",
+          status: appt.status,
+          date: appt.schedule?.date?.toISOString() ?? null,
+          type: appt.type,
+        };
+      }),
+      totalPages,
+      currentPage: page,
+    };
+  } catch (error) {
+    console.error("Error fetching awaiting vitals appointments:", error);
     return { data: [], totalPages: 0, currentPage: 1 };
   }
 }
@@ -120,6 +218,23 @@ export async function registerWalkIn(data: {
     // Using T12:00:00Z will fail the unique constraint lookup because it doesn't match the DB exact timestamp!
     const date = new Date(`${data.date}T00:00:00Z`);
 
+    // Prevent booking a past time slot if the date is today
+    const phtToday = getTodayPHT();
+    if (date.getTime() < phtToday.getTime()) {
+      return {
+        success: false,
+        error: "Cannot register a walk-in for a past date."
+      };
+    }
+    if (date.getTime() === phtToday.getTime()) {
+      if (isTimeSlotPassedPHT(data.timeSlot)) {
+        return {
+          success: false,
+          error: "This time slot has already passed. Please choose a future time slot."
+        };
+      }
+    }
+
     const birthday = new Date(`${data.birthday}T00:00:00Z`);
 
     const service = await prisma.service.findUnique({ 
@@ -133,17 +248,35 @@ export async function registerWalkIn(data: {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // Create the WalkInPatient record
-      const walkInPatient = await tx.walkInPatient.create({
-        data: {
+      let walkInPatient = await tx.walkInPatient.findFirst({
+        where: {
           fullName: data.fullName,
-          birthday,
-          age: data.age,
+          birthday: birthday,
           sex: data.sex,
-          contactNumber: data.contactNumber,
-          address: data.address,
         },
       });
+
+      if (!walkInPatient) {
+        walkInPatient = await tx.walkInPatient.create({
+          data: {
+            fullName: data.fullName,
+            birthday,
+            age: data.age,
+            sex: data.sex,
+            contactNumber: data.contactNumber,
+            address: data.address,
+          },
+        });
+      } else {
+        // Update contact/address with the latest info
+        walkInPatient = await tx.walkInPatient.update({
+          where: { id: walkInPatient.id },
+          data: {
+            contactNumber: data.contactNumber,
+            address: data.address,
+          },
+        });
+      }
 
       // Reuse an existing walk-in placeholder user (same name+gender, no email/password)
       // to avoid accumulating thousands of orphaned records over time.
@@ -175,6 +308,9 @@ export async function registerWalkIn(data: {
         });
       }
 
+      // Concurrency Guard: Lock the schedule row to prevent parallel double-bookings
+      await tx.$executeRaw`SELECT 1 FROM "Schedule" WHERE id = ${schedule.id} FOR UPDATE`;
+
       // Double-booking check
       const existingAppt = await tx.appointment.findFirst({
         where: {
@@ -187,6 +323,19 @@ export async function registerWalkIn(data: {
 
       if (existingAppt) {
         throw new Error("This time slot is already booked. Please select another slot.");
+      }
+
+      // Check if the slot has been disabled by staff or by an approved doctor leave
+      const disabledSlot = await tx.disabledSlot.findFirst({
+        where: {
+          date: schedule.date,
+          service_id: service.id,
+          time_slot: data.timeSlot,
+        },
+      });
+
+      if (disabledSlot) {
+        throw new Error("This time slot has been disabled or the doctor is on leave. Please select another slot.");
       }
 
       const appt = await tx.appointment.create({
@@ -215,6 +364,18 @@ export async function registerWalkIn(data: {
         timeSlot: data.timeSlot
       });
 
+      // Notify Admins and assigned Doctor
+      await createAdminNotification(
+        `New walk-in appointment registered for ${data.fullName} (Service: ${service.name}) on ${data.date} at ${data.timeSlot}.`,
+        appt.id
+      );
+      const { createDoctorNotification } = await import("@/lib/notifications");
+      await createDoctorNotification(
+        `New walk-in patient registered for your service on ${data.date} at ${data.timeSlot}.`,
+        service.assignedDoctor!.id,
+        appt.id
+      );
+
       return {
         appt,
         slip: {
@@ -237,7 +398,7 @@ export async function registerWalkIn(data: {
   }
 }
 
-export type UpcomingOnlineAppointment = {
+export type UpcomingAppointment = {
   id: string;
   patientName: string;
   date: string; // ISO date string from Prisma @db.Date (UTC midnight)
@@ -245,17 +406,17 @@ export type UpcomingOnlineAppointment = {
   service: string;
   doctor: string;
   status: string;
+  type: string;
 };
 
-export async function getUpcomingOnlineAppointments(
+export async function getUpcomingAppointments(
   page: number = 1,
   limit: number = 10
-): Promise<{ data: UpcomingOnlineAppointment[]; totalPages: number; currentPage: number }> {
+): Promise<{ data: UpcomingAppointment[]; totalPages: number; currentPage: number }> {
   try {
     const today = getTodayPHT();
 
     const whereClause = {
-      type: "WALK_IN" as const,
       status: "CONFIRMED" as const,
       schedule: {
         date: { gt: today },
@@ -271,6 +432,8 @@ export async function getUpcomingOnlineAppointments(
         include: {
           schedule: { select: { date: true } },
           walkInPatient: { select: { fullName: true } },
+          user: { select: { name: true } },
+          subProfile: { select: { firstName: true, lastName: true } }
         },
         orderBy: [
           { schedule: { date: "asc" } },
@@ -284,15 +447,29 @@ export async function getUpcomingOnlineAppointments(
     const totalPages = Math.ceil(totalRecords / limit);
 
     return {
-      data: appointments.map((appt) => ({
-        id: appt.id,
-        patientName: appt.walkInPatient?.fullName ?? "Unknown",
-        date: appt.schedule.date.toISOString(),
-        time: appt.time_slot ?? "—",
-        service: appt.service ?? "—",
-        doctor: appt.doctor_name ?? "—",
-        status: appt.status,
-      })),
+      data: appointments.map((appt) => {
+        let displayPatientName = "Unknown";
+        
+        if (appt.type === "WALK_IN") {
+          displayPatientName = appt.walkInPatient?.fullName ?? "Unknown";
+        } else if (appt.subProfile) {
+          // Dual Context: Show family member name + parent context
+          displayPatientName = `${appt.subProfile.firstName} ${appt.subProfile.lastName} (Dependent of: ${appt.user?.name || 'Unknown'})`;
+        } else {
+          displayPatientName = appt.user?.name ?? "Unknown";
+        }
+
+        return {
+          id: appt.id,
+          patientName: displayPatientName,
+          date: appt.schedule.date.toISOString(),
+          time: appt.time_slot ?? "—",
+          service: appt.service ?? "—",
+          doctor: appt.doctor_name ?? "—",
+          status: appt.status,
+          type: appt.type,
+        };
+      }),
       totalPages,
       currentPage: page,
     };
@@ -324,31 +501,12 @@ export async function staffCancelAppointment(
       if (appointment.status !== "CONFIRMED")
         throw new Error("Only confirmed appointments can be cancelled.");
 
-      // If this is a walk-in appointment, we should also delete the WalkInPatient record
-      // since the system creates a new WalkInPatient record per walk-in registration.
-      // Deleting the appointment alone leaves the WalkInPatient as an orphan.
-      await tx.appointment.delete({
+      // Soft-delete the appointment (mark as CANCELLED)
+      // Patient records (WalkInPatient and User) are explicitly retained.
+      await tx.appointment.update({
         where: { id: appointmentId },
+        data: { status: "CANCELLED" },
       });
-
-      if (appointment.walkInPatientId) {
-        await tx.walkInPatient.delete({
-          where: { id: appointment.walkInPatientId },
-        });
-      }
-
-      // If the user is a walk-in placeholder (no email/password) and has no other appointments, delete it
-      if (appointment.user && !appointment.user.email) {
-        const otherAppointments = await tx.appointment.count({
-          where: { user_id: appointment.user_id },
-        });
-        
-        if (otherAppointments === 0) {
-          await tx.user.delete({
-            where: { id: appointment.user_id },
-          });
-        }
-      }
 
       // Decrement schedule booked_count, never below 0
       const schedule = await tx.schedule.findUnique({
@@ -392,6 +550,12 @@ export async function staffRescheduleAppointment(data: {
 
     const newDate = new Date(`${data.newDateString}T00:00:00Z`);
 
+    const { getTodayPHT } = await import("@/lib/utils");
+    const today = getTodayPHT();
+    if (newDate.getTime() < today.getTime()) {
+      return { success: false, error: "Cannot reschedule to a past date." };
+    }
+
     // Resolve new service and doctor outside the transaction (read-only)
     const newService = await prisma.service.findUnique({
       where: { id: data.newServiceId },
@@ -417,6 +581,9 @@ export async function staffRescheduleAppointment(data: {
           data: { date: newDate, max_capacity: 50, booked_count: 0 },
         });
       }
+
+      // Concurrency Guard: Lock the schedule row
+      await tx.$executeRaw`SELECT 1 FROM "Schedule" WHERE id = ${newSchedule.id} FOR UPDATE`;
 
       // Double-booking check: same service, same time slot, same date
       const conflict = await tx.appointment.findFirst({
@@ -467,6 +634,11 @@ export async function staffRescheduleAppointment(data: {
         await tx.schedule.update({
           where: { id: newSchedule.id },
           data: { booked_count: { increment: 1 } },
+        });
+
+        // Clear any existing vitals/consultation since the appointment moved to a new date
+        await tx.consultation.deleteMany({
+          where: { appointmentId: data.appointmentId },
         });
       }
 
@@ -578,5 +750,160 @@ export async function getPatientRecords(
   } catch (error: any) {
     console.error("Error fetching patient records:", error);
     return { data: [], totalPages: 0, currentPage: 1 };
+  }
+}
+
+export async function staffRecordVitals(appointmentId: string, vitalSigns: any, chiefComplaint: string) {
+  try {
+    const session = await verifySession();
+    if (!session || (session.role !== "STAFF" && session.role !== "ADMIN")) {
+      return { error: "Unauthorized request." };
+    }
+
+    if (!appointmentId) return { error: "Appointment ID is required." };
+
+    const result = await prisma.$transaction(async (tx) => {
+      const appointment = await tx.appointment.findUnique({
+        where: { id: appointmentId },
+        include: { schedule: true },
+      });
+
+      if (!appointment) throw new Error("Appointment not found.");
+      if (appointment.status !== "CONFIRMED") {
+        throw new Error("Vitals can only be recorded for confirmed appointments.");
+      }
+
+      const today = getTodayPHT();
+      const tomorrow = new Date(today);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+
+      if (appointment.schedule.date < today || appointment.schedule.date >= tomorrow) {
+        throw new Error("Vitals can only be recorded on the scheduled day of the appointment.");
+      }
+
+      // Create or Update Consultation
+      const consultation = await tx.consultation.upsert({
+        where: { appointmentId },
+        update: {
+          vitalSigns,
+          chiefComplaint,
+        },
+        create: {
+          appointmentId,
+          vitalSigns,
+          chiefComplaint,
+        },
+      });
+
+      // Optionally log audit
+      await createAuditLog(
+        tx,
+        session.userId,
+        "UPDATE",
+        "Consultation",
+        appointmentId,
+        "Recorded vitals during triage"
+      );
+
+      return consultation;
+    });
+
+    revalidatePath("/dashboard/staff");
+    return { success: true, consultation: result };
+  } catch (error: any) {
+    console.error("Error saving vitals:", error);
+    return { error: error.message || "Failed to save vital signs." };
+  }
+}
+
+export async function getAppointmentsByServiceForDate(dateStr?: string) {
+  try {
+    let targetDate: Date;
+    let tomorrow: Date;
+
+    if (dateStr) {
+      targetDate = new Date(`${dateStr}T00:00:00Z`);
+      tomorrow = new Date(targetDate);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    } else {
+      targetDate = getTodayPHT();
+      tomorrow = new Date(targetDate);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    }
+
+    const appointments = await prisma.appointment.findMany({
+      where: {
+        schedule: { date: { gte: targetDate, lt: tomorrow } },
+        status: { notIn: ["CANCELLED", "NO_SHOW"] },
+      },
+      include: { walkInPatient: true, user: true, subProfile: true, schedule: true },
+      orderBy: { time_slot: "asc" },
+    });
+
+    const mapped = appointments.map((appt) => {
+      let displayPatientName = "Unknown";
+      let displaySex = "N/A";
+      let displayAge: number | string | null = null;
+      
+      if (appt.type === "WALK_IN") {
+        displayPatientName = appt.walkInPatient?.fullName ?? "Unknown";
+        displaySex = appt.walkInPatient?.sex ?? "N/A";
+        displayAge = appt.walkInPatient?.age ?? null;
+      } else if (appt.subProfile) {
+        displayPatientName = `${appt.subProfile.firstName} ${appt.subProfile.lastName}`;
+        displaySex = appt.subProfile.gender ?? "N/A";
+        if (appt.subProfile.birthday) {
+          const ageDifMs = Date.now() - new Date(appt.subProfile.birthday).getTime();
+          const ageDate = new Date(ageDifMs);
+          displayAge = Math.abs(ageDate.getUTCFullYear() - 1970);
+        }
+      } else if (appt.user) {
+        displayPatientName = appt.user.name ?? "Unknown";
+        displaySex = appt.user.gender ?? "N/A";
+        if (appt.user.birthday) {
+          const ageDifMs = Date.now() - new Date(appt.user.birthday).getTime();
+          const ageDate = new Date(ageDifMs);
+          displayAge = Math.abs(ageDate.getUTCFullYear() - 1970);
+        }
+      }
+
+      return {
+        id: appt.id,
+        patientName: displayPatientName,
+        age: displayAge,
+        sex: displaySex,
+        service: appt.service ?? "Unknown Service",
+        doctor: appt.doctor_name ?? "Unknown",
+        time: appt.time_slot ?? "N/A",
+        status: appt.status,
+        type: appt.type,
+      };
+    });
+
+    const services = [
+      "Dental Clinic",
+      "Drug Testing",
+      "Family Planning",
+      "Adolescence Clinic",
+      "Ultrasound",
+    ];
+
+    const grouped: Record<string, typeof mapped> = {};
+    services.forEach(s => { grouped[s] = []; });
+
+    mapped.forEach(appt => {
+      if (grouped[appt.service]) {
+        grouped[appt.service].push(appt);
+      } else {
+        // Just in case there's an appointment with an unknown service
+        if (!grouped["Other"]) grouped["Other"] = [];
+        grouped["Other"].push(appt);
+      }
+    });
+
+    return { success: true, data: grouped };
+  } catch (error: any) {
+    console.error("Error fetching grouped appointments:", error);
+    return { success: false, data: {}, error: error.message };
   }
 }
