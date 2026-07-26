@@ -17,7 +17,27 @@ const formSchema = z.object({
   firstName: z.string().min(2, "First name must be at least 2 characters"),
   middleName: z.string().optional(),
   lastName: z.string().min(2, "Last name must be at least 2 characters"),
-  birthday: z.string().min(1, "Date of birth is required"),
+  birthday: z.string()
+    .min(1, "Date of birth is required")
+    .regex(/^(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])\/\d{4}$/, "Please enter date in MM/DD/YYYY format")
+    .refine((val) => {
+      const parts = val.split("/");
+      if (parts.length !== 3) return false;
+      const month = parseInt(parts[0], 10);
+      const day = parseInt(parts[1], 10);
+      const year = parseInt(parts[2], 10);
+      
+      const currentYear = new Date().getFullYear();
+      if (year < 1900 || year > currentYear) return false;
+
+      const date = new Date(year, month - 1, day);
+      return (
+        date.getFullYear() === year &&
+        date.getMonth() === month - 1 &&
+        date.getDate() === day &&
+        date <= new Date()
+      );
+    }, "Please enter a valid past birthdate"),
   sex: z.string().min(1, "Sex is required"),
   maritalStatus: z.string().min(1, "Civil status is required"),
   phone: z.string().min(10, "Valid contact number is required"),
@@ -37,6 +57,33 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
+const formatBirthdayInput = (value: string) => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-");
+    return `${month}/${day}/${year}`;
+  }
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  if (digits.length === 0) return "";
+  if (digits.length <= 2) {
+    if (digits.length === 2 && value.endsWith("/")) {
+      return `${digits}/`;
+    }
+    return digits;
+  }
+  if (digits.length <= 4) {
+    const month = digits.slice(0, 2);
+    const day = digits.slice(2);
+    if (digits.length === 4 && value.endsWith("/")) {
+      return `${month}/${day}/`;
+    }
+    return `${month}/${day}`;
+  }
+  const month = digits.slice(0, 2);
+  const day = digits.slice(2, 4);
+  const year = digits.slice(4);
+  return `${month}/${day}/${year}`;
+};
+
 export default function RegisterPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
@@ -53,6 +100,7 @@ export default function RegisterPage() {
     defaultValues: { terms: false },
   });
 
+  const { onChange: onBirthdayChange, ...birthdayProps } = register("birthday");
   const passwordValue = watch("password", "");
 
   const calculateStrength = (pwd: string) => {
@@ -87,7 +135,18 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       const { registerPatient } = await import("@/actions/auth");
-      const res = await registerPatient(data);
+      
+      let isoBirthday = data.birthday;
+      const parts = data.birthday.split("/");
+      if (parts.length === 3) {
+        const [month, day, year] = parts;
+        isoBirthday = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+      }
+
+      const res = await registerPatient({
+        ...data,
+        birthday: isoBirthday,
+      });
 
       if (res.success && res.redirect) {
         toast.success("Registration successful! Redirecting...");
@@ -168,7 +227,19 @@ export default function RegisterPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="space-y-2">
                     <Label className="text-slate-700 font-bold">Date of birth</Label>
-                    <Input type="date" {...register("birthday")} className={errors.birthday ? 'border-red-500' : ''} />
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="MM/DD/YYYY"
+                      maxLength={10}
+                      {...birthdayProps}
+                      onChange={(e) => {
+                        const formatted = formatBirthdayInput(e.target.value);
+                        e.target.value = formatted;
+                        onBirthdayChange(e);
+                      }}
+                      className={errors.birthday ? 'border-red-500' : ''}
+                    />
                     {errors.birthday && <p className="text-red-500 text-xs">{errors.birthday.message}</p>}
                   </div>
                   <div className="space-y-2">
