@@ -40,7 +40,7 @@ const formSchema = z.object({
     }, "Please enter a valid past birthdate"),
   sex: z.string().min(1, "Sex is required"),
   maritalStatus: z.string().min(1, "Civil status is required"),
-  phone: z.string().min(10, "Valid contact number is required"),
+  phone: z.string().regex(/^\d{11}$/, "Contact number must be exactly 11 digits"),
   address: z.string().min(5, "Complete address is required"),
   email: z.string().email("Invalid email address"),
   password: z.string()
@@ -101,6 +101,7 @@ export default function RegisterPage() {
   });
 
   const { onChange: onBirthdayChange, ...birthdayProps } = register("birthday");
+  const { onChange: onPhoneChange, ...phoneProps } = register("phone");
   const passwordValue = watch("password", "");
 
   const calculateStrength = (pwd: string) => {
@@ -266,7 +267,17 @@ export default function RegisterPage() {
 
                 <div className="space-y-2">
                   <Label className="text-slate-700 font-bold">Contact number</Label>
-                  <Input type="tel" {...register("phone")} placeholder="09XXXXXXXXX" className={errors.phone ? 'border-red-500' : ''} />
+                  <Input 
+                    type="tel" 
+                    {...phoneProps} 
+                    placeholder="09XXXXXXXXX" 
+                    maxLength={11}
+                    onChange={(e) => {
+                      e.target.value = e.target.value.replace(/\D/g, "");
+                      onPhoneChange(e);
+                    }}
+                    className={errors.phone ? 'border-red-500' : ''} 
+                  />
                   {errors.phone && <p className="text-red-500 text-xs">{errors.phone.message}</p>}
                 </div>
 
