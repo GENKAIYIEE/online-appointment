@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { verifySession } from '@/lib/session';
 import { createAuditLog } from '@/lib/audit';
+import { getTodayPHT } from '@/lib/utils';
 
 export async function getStaffAndDoctors(page = 1, limit = 10, search = "") {
   const session = await verifySession();
@@ -159,8 +160,7 @@ export async function updateStaffOrDoctor(
         // Appointments are tied to the schedule. We check appointments linked to this service that are CONFIRMED and >= today
         // But the simplest way is to check if there are CONFIRMED appointments where doctor_name == user.name or service == user.assignedService.name
         // Actually, if we just check CONFIRMED appointments >= today for this service:
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const today = getTodayPHT();
 
         const upcomingAppts = await tx.appointment.count({
           where: {
@@ -228,8 +228,7 @@ export async function updateStaffOrDoctor(
         });
 
         if (service) {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
+          const today = getTodayPHT();
           await tx.appointment.updateMany({
             where: {
               service: service.name,
@@ -246,8 +245,7 @@ export async function updateStaffOrDoctor(
           data: { doctor_name: updatedUser.name },
         });
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const today = getTodayPHT();
         await tx.appointment.updateMany({
           where: {
             service: service.name,
@@ -284,8 +282,7 @@ export async function deleteUser(id: string) {
       });
 
       if (user?.role === 'DOCTOR') {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const today = getTodayPHT();
 
         const upcomingAppts = await tx.appointment.count({
           where: {

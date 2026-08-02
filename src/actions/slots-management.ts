@@ -51,13 +51,13 @@ export async function getMonthlySlotSummary(
     
     const config = await getClinicConfig();
 
-    // month is 0-indexed in JS Dates
-    const startDate = new Date(year, month, 1);
-    const endDate = new Date(year, month + 1, 0); // Last day of month
-    
-    // Ensure times are at midnight local time to avoid timezone issues when matching
-    startDate.setHours(0, 0, 0, 0);
-    endDate.setHours(23, 59, 59, 999);
+    // Build month boundaries using explicit UTC strings to avoid local-timezone
+    // date constructor ambiguity (new Date(year, month, day) uses server local TZ)
+    const mm = String(month + 1).padStart(2, '0');
+    const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const lastDayStr = String(lastDay).padStart(2, '0');
+    const startDate = new Date(`${year}-${mm}-01T00:00:00Z`);
+    const endDate = new Date(`${year}-${mm}-${lastDayStr}T23:59:59.999Z`);
 
     // Fetch all disabled slots for the month
     const disabledSlots = await prisma.disabledSlot.findMany({

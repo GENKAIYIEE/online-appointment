@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { verifySession } from "@/lib/session";
 import { createAuditLog } from "@/lib/audit";
+import { getTodayPHT } from "@/lib/utils";
 
 export async function createService(data: { name: string; doctorId?: string; doctorName?: string }) {
   try {
@@ -157,8 +158,7 @@ export async function deleteService(serviceId: string) {
 
     // Transaction to safely delete dependencies (disabled slots) before the service
     await prisma.$transaction(async (tx) => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const today = getTodayPHT();
 
       const upcomingAppts = await tx.appointment.count({
         where: {
