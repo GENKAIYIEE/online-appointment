@@ -215,7 +215,10 @@ export default function RegisterPage() {
                     {errors.firstName && <p className="text-red-500 text-xs">{errors.firstName.message}</p>}
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-slate-700 font-bold">Middle name</Label>
+                    <div className="flex items-center gap-1">
+                      <Label className="text-slate-700 font-bold">Middle name</Label>
+                      <span className="text-slate-400 font-normal text-sm">(If applicable)</span>
+                    </div>
                     <Input {...register("middleName")} placeholder="Santos" />
                   </div>
                   <div className="space-y-2">

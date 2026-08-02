@@ -249,8 +249,8 @@ export function Navbar({ role = "User", userName = "Account" }: NavbarProps) {
             <span className="text-[12px] text-[var(--color-text-muted)] font-inter capitalize">{role}</span>
           </div>
           <Avatar className="h-9 w-9 border border-[var(--color-border)] shadow-sm">
-            <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${role}`} />
-            <AvatarFallback className="bg-[var(--color-primary-light)] text-[var(--color-primary)] font-heading font-semibold">{role.charAt(0)}</AvatarFallback>
+            <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${userName}`} />
+            <AvatarFallback className="bg-[var(--color-primary-light)] text-[var(--color-primary)] font-heading font-semibold">{userName ? userName.charAt(0).toUpperCase() : role.charAt(0).toUpperCase()}</AvatarFallback>
           </Avatar>
         </div>
       </div>

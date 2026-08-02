@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { differenceInYears, differenceInMonths, format } from "date-fns";
 import { toast } from "sonner";
-import { Save, FileEdit, CheckCircle2, User, ArrowLeft } from "lucide-react";
+import { Save, FileEdit, CheckCircle2, User } from "lucide-react";
 import { saveITR } from "@/actions/itr";
 import { cn } from "@/lib/utils";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 
 export default function ITRClient({ targetId, isSubProfile, initialData }: { targetId: string; isSubProfile: boolean; initialData: any }) {
   const router = useRouter();
+
   const [loading, setLoading] = useState(false);
   
   // Destructure data
@@ -200,17 +202,7 @@ export default function ITRClient({ targetId, isSubProfile, initialData }: { tar
 
   return (
     <div className="max-w-5xl mx-auto pb-32">
-      {/* ── Back Button ── */}
-      <div className="mb-4">
-        <Button 
-          variant="ghost" 
-          onClick={() => router.back()} 
-          className="text-slate-500 hover:text-slate-700 hover:bg-slate-100 -ml-2"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back
-        </Button>
-      </div>
+
 
       {/* HEADER */}
       <div className="bg-white p-6 rounded-t-2xl border-b-4 border-emerald-600 shadow-sm mb-6 flex flex-col md:flex-row items-center justify-between text-center md:text-left gap-4">
@@ -279,34 +271,57 @@ export default function ITRClient({ targetId, isSubProfile, initialData }: { tar
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               
               <div className="space-y-2 lg:col-span-2">
-                <Label>Family Serial Number</Label>
-                <Input value={familySerialNumber} onChange={e => setFamilySerialNumber(e.target.value)} placeholder="Optional" />
+                <div className="flex items-center gap-1">
+                  <Label>Family Serial Number</Label>
+                  <span className="text-slate-400 font-normal text-sm">(If applicable)</span>
+                </div>
+                <Input value={familySerialNumber} onChange={e => setFamilySerialNumber(e.target.value)} />
               </div>
               <div className="space-y-2 lg:col-span-2">
-                <Label>Family Code</Label>
-                <Input value={familyCode} onChange={e => setFamilyCode(e.target.value)} placeholder="Optional" />
+                <div className="flex items-center gap-1">
+                  <Label>Family Code</Label>
+                  <span className="text-slate-400 font-normal text-sm">(If applicable)</span>
+                </div>
+                <Input value={familyCode} onChange={e => setFamilyCode(e.target.value)} />
               </div>
 
               {/* Editable Registration Fields */}
               <div className="space-y-2">
-                <Label className="flex items-center">Last Name <EditableTag/></Label>
+                <div className="flex items-center gap-1">
+                  <Label>Last Name</Label>
+                  <EditableTag/>
+                </div>
                 <Input value={lastName} onChange={(e)=>setLastName(e.target.value)}/>
               </div>
               <div className="space-y-2">
-                <Label className="flex items-center">First Name <EditableTag/></Label>
+                <div className="flex items-center gap-1">
+                  <Label>First Name</Label>
+                  <EditableTag/>
+                </div>
                 <Input value={firstName} onChange={(e)=>setFirstName(e.target.value)}/>
               </div>
               <div className="space-y-2">
-                <Label className="flex items-center">Middle Name <EditableTag/></Label>
+                <div className="flex items-center gap-1">
+                  <Label>Middle Name</Label>
+                  <span className="text-slate-400 font-normal text-sm">(If applicable)</span>
+                  <EditableTag/>
+                </div>
                 <Input value={middleName} onChange={(e)=>setMiddleName(e.target.value)}/>
               </div>
               <div className="space-y-2">
-                <Label className="flex items-center">Suffix <EditableTag/></Label>
+                <div className="flex items-center gap-1">
+                  <Label>Suffix</Label>
+                  <span className="text-slate-400 font-normal text-sm">(If applicable)</span>
+                  <EditableTag/>
+                </div>
                 <Input value={suffix} onChange={(e)=>setSuffix(e.target.value)} placeholder="e.g. Jr., Sr."/>
               </div>
               
               <div className="space-y-2">
-                <Label className="flex items-center">Birthday <EditableTag/></Label>
+                <div className="flex items-center gap-1">
+                  <Label>Birthday</Label>
+                  <EditableTag/>
+                </div>
                 <Input type="date" value={birthday} onChange={(e)=>setBirthday(e.target.value)} />
               </div>
               <div className="space-y-2">
@@ -314,7 +329,10 @@ export default function ITRClient({ targetId, isSubProfile, initialData }: { tar
                 <Input value={age} readOnly className="bg-slate-50 text-emerald-700 font-bold cursor-not-allowed" />
               </div>
               <div className="space-y-2">
-                <Label className="flex items-center">Sex <EditableTag/></Label>
+                <div className="flex items-center gap-1">
+                  <Label>Sex</Label>
+                  <EditableTag/>
+                </div>
                 <select value={sex} onChange={(e)=>setSex(e.target.value)} className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2">
                   <option value="">Select...</option>
                   <option value="Male">Male</option>
@@ -322,7 +340,10 @@ export default function ITRClient({ targetId, isSubProfile, initialData }: { tar
                 </select>
               </div>
               <div className="space-y-2">
-                <Label className="flex items-center">Marital Status <EditableTag/></Label>
+                <div className="flex items-center gap-1">
+                  <Label>Marital Status</Label>
+                  <EditableTag/>
+                </div>
                 <select value={maritalStatus} onChange={(e)=>setMaritalStatus(e.target.value)} className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2">
                   <option value="">Select...</option>
                   <option value="Single">Single</option>
@@ -334,20 +355,31 @@ export default function ITRClient({ targetId, isSubProfile, initialData }: { tar
 
               {/* Updatable Fields */}
               <div className="space-y-2 lg:col-span-3">
-                <Label className="flex items-center">Address <span className="text-red-500 ml-1">*</span> <EditableTag/></Label>
+                <div className="flex items-center gap-1">
+                  <Label>Address</Label>
+                  <span className="text-red-500">*</span>
+                  <EditableTag/>
+                </div>
                 <Textarea value={address} onChange={e => setAddress(e.target.value)} className={errors.address ? "border-red-500 focus-visible:ring-red-500" : ""} />
                 {errors.address && <p className="text-xs text-red-500">{errors.address}</p>}
               </div>
               <div className="space-y-2">
-                <Label className="flex items-center">Contact Number <span className="text-red-500 ml-1">*</span> <EditableTag/></Label>
-                <Input value={contactNumber} onChange={e => setContactNumber(e.target.value)} className={errors.contactNumber ? "border-red-500 focus-visible:ring-red-500" : ""} />
+                <div className="flex items-center gap-1">
+                  <Label>Contact Number</Label>
+                  <span className="text-red-500">*</span>
+                  <EditableTag/>
+                </div>
+                <Input value={contactNumber} onChange={e => setContactNumber(e.target.value.replace(/\D/g, ""))} placeholder="09XXXXXXXXX" maxLength={11} className={errors.contactNumber ? "border-red-500 focus-visible:ring-red-500" : ""} />
                 {errors.contactNumber && <p className="text-xs text-red-500">{errors.contactNumber}</p>}
               </div>
 
               {/* Philhealth */}
               <div className="space-y-2 lg:col-span-2">
-                <Label>Philhealth Number</Label>
-                <Input value={philhealthNumber} onChange={e => setPhilhealthNumber(e.target.value)} placeholder="00-000000000-0" />
+                <div className="flex items-center gap-1">
+                  <Label>Philhealth Number</Label>
+                  <span className="text-slate-400 font-normal text-sm">(If applicable)</span>
+                </div>
+                <Input value={philhealthNumber} onChange={e => setPhilhealthNumber(e.target.value.replace(/\D/g, ""))} placeholder="000000000000" maxLength={12} />
               </div>
               <div className="space-y-2 lg:col-span-2">
                 <Label>Member Type</Label>
@@ -376,7 +408,13 @@ export default function ITRClient({ targetId, isSubProfile, initialData }: { tar
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <div className="space-y-2"><Label>Member's Last Name</Label><Input value={dependentLastName} onChange={e => setDependentLastName(e.target.value)} /></div>
               <div className="space-y-2"><Label>Member's First Name</Label><Input value={dependentFirstName} onChange={e => setDependentFirstName(e.target.value)} /></div>
-              <div className="space-y-2"><Label>Member's Middle Name</Label><Input value={dependentMiddleName} onChange={e => setDependentMiddleName(e.target.value)} /></div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1">
+                  <Label>Member's Middle Name</Label>
+                  <span className="text-slate-400 font-normal text-sm">(If applicable)</span>
+                </div>
+                <Input value={dependentMiddleName} onChange={e => setDependentMiddleName(e.target.value)} />
+              </div>
               <div className="space-y-2"><Label>Member's PIN</Label><Input value={dependentPin} onChange={e => setDependentPin(e.target.value)} /></div>
               <div className="space-y-2"><Label>Member's Birthday</Label><Input type="date" value={dependentBirthday} onChange={e => setDependentBirthday(e.target.value)} /></div>
               <div className="space-y-2">
@@ -557,7 +595,10 @@ export default function ITRClient({ targetId, isSubProfile, initialData }: { tar
           {sectionsOpen.sec10 && (
             <div className="p-6">
               <div className="space-y-2">
-                <Label>Immunization History Notes (Optional)</Label>
+                <div className="flex items-center gap-1">
+                  <Label>Immunization History Notes</Label>
+                  <span className="text-slate-400 font-normal text-sm">(If applicable)</span>
+                </div>
                 <Textarea value={immunizationNotes} onChange={e=>setImmunizationNotes(e.target.value)} placeholder="Specify vaccines received..." className="min-h-[100px]" />
               </div>
             </div>
