@@ -301,7 +301,7 @@ export async function saveConsultation(appointmentId: string, data: {
     const doctor = await prisma.user.findUnique({ where: { id: doctorId } });
     const doctorName = doctor?.name || "Your Doctor";
 
-    await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const appointment = await tx.appointment.findUnique({
         where: { id: appointmentId },
         select: { status: true },
@@ -352,7 +352,7 @@ export async function saveConsultation(appointmentId: string, data: {
         });
       }
 
-      // Create notification for the patient
+      // Create notification for the patient (small write — keep inside transaction)
       const hasNotes = data.diagnosis.trim() !== "" || data.notes.trim() !== "";
       const dateStr = updatedAppt.created_at ? formatDatePHT(updatedAppt.created_at, "MMMM d, yyyy") : 'recently';
       
@@ -366,16 +366,21 @@ export async function saveConsultation(appointmentId: string, data: {
           user_id: updatedAppt.user_id,
           appointmentId: appointmentId,
           message: message,
-          // Since icon/type aren't in schema, they would be handled by frontend parsing or a JSON metadata field, but schema only has `message`, `isRead`. 
-          // We'll embed a prefix in the message if needed, but standard string is fine.
         }
       });
 
-      // Notify Staff
-      const { createStaffNotification } = await import("@/lib/notifications");
-      await createStaffNotification(`Consultation completed by ${doctorName} for appointment ID: ${appointmentId}`, appointmentId);
-
+      return { userId: updatedAppt.user_id };
+    }, {
+      maxWait: 5000,
+      timeout: 15000,
     });
+
+    // Fan-out staff notification AFTER transaction commits — keeps the transaction fast
+    const { createStaffNotification } = await import("@/lib/notifications");
+    await createStaffNotification(
+      `Consultation completed by ${doctorName} for appointment ID: ${appointmentId}`,
+      appointmentId
+    );
 
     revalidatePath("/dashboard/doctor");
     revalidatePath(`/dashboard/doctor/consultation/${appointmentId}`);

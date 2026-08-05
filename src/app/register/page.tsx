@@ -103,6 +103,7 @@ export default function RegisterPage() {
   const { onChange: onBirthdayChange, ...birthdayProps } = register("birthday");
   const { onChange: onPhoneChange, ...phoneProps } = register("phone");
   const passwordValue = watch("password", "");
+  const formData = watch();
 
   const calculateStrength = (pwd: string) => {
     let score = 0;
@@ -129,6 +130,19 @@ export default function RegisterPage() {
     const isStep1Valid = await trigger(fieldsToValidate);
     if (isStep1Valid) {
       setStep(2);
+    }
+  };
+
+  const nextStep2 = async () => {
+    const fieldsToValidate: any[] = [
+      "email",
+      "password",
+      "confirmPassword",
+      "terms",
+    ];
+    const isStep2Valid = await trigger(fieldsToValidate);
+    if (isStep2Valid) {
+      setStep(3);
     }
   };
 
@@ -193,14 +207,19 @@ export default function RegisterPage() {
         <div className="w-full max-w-2xl bg-white p-8 md:p-10 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100">
           
           <div className="flex items-center justify-between mb-10">
-            <div className={`flex items-center gap-3 ${step === 1 ? 'text-slate-900' : 'text-slate-400'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${step === 1 ? 'bg-green-600 text-white' : 'bg-slate-100'}`}>1</div>
-              <span className="font-semibold text-sm">Personal info</span>
+            <div className={`flex items-center gap-3 ${step >= 1 ? 'text-slate-900' : 'text-slate-400'}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${step >= 1 ? 'bg-green-600 text-white' : 'bg-slate-100'}`}>1</div>
+              <span className="font-semibold text-sm hidden sm:inline">Personal info</span>
             </div>
-            <div className={`h-1 flex-1 mx-4 rounded-full ${step === 2 ? 'bg-green-600' : 'bg-slate-100'}`} />
-            <div className={`flex items-center gap-3 ${step === 2 ? 'text-slate-900' : 'text-slate-400'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${step === 2 ? 'bg-green-600 text-white' : 'bg-slate-100'}`}>2</div>
-              <span className="font-semibold text-sm">Account setup</span>
+            <div className={`h-1 flex-1 mx-2 rounded-full ${step >= 2 ? 'bg-green-600' : 'bg-slate-100'}`} />
+            <div className={`flex items-center gap-3 ${step >= 2 ? 'text-slate-900' : 'text-slate-400'}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${step >= 2 ? 'bg-green-600 text-white' : 'bg-slate-100'}`}>2</div>
+              <span className="font-semibold text-sm hidden sm:inline">Account setup</span>
+            </div>
+            <div className={`h-1 flex-1 mx-2 rounded-full ${step >= 3 ? 'bg-green-600' : 'bg-slate-100'}`} />
+            <div className={`flex items-center gap-3 ${step >= 3 ? 'text-slate-900' : 'text-slate-400'}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${step >= 3 ? 'bg-green-600 text-white' : 'bg-slate-100'}`}>3</div>
+              <span className="font-semibold text-sm hidden sm:inline">Review</span>
             </div>
           </div>
 
@@ -216,8 +235,8 @@ export default function RegisterPage() {
                   </div>
                   <div className="space-y-2">
                     <div className="flex items-center gap-1">
-                      <Label className="text-slate-700 font-bold">Middle name</Label>
-                      <span className="text-slate-400 font-normal text-sm">(If applicable)</span>
+                      <Label className="text-slate-700 font-bold whitespace-nowrap">Middle name</Label>
+                      <span className="text-slate-400 font-normal text-sm whitespace-nowrap">(If applicable)</span>
                     </div>
                     <Input {...register("middleName")} placeholder="Santos" />
                   </div>
@@ -356,6 +375,54 @@ export default function RegisterPage() {
 
                 <div className="flex justify-between pt-4">
                   <Button type="button" variant="outline" onClick={() => setStep(1)} className="gap-2">
+                    <ArrowLeft className="w-4 h-4" /> Back
+                  </Button>
+                  <Button type="button" onClick={nextStep2} className="gap-2 bg-green-600 hover:bg-green-700">
+                    Next Step <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {step === 3 && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
+                <div className="bg-slate-100 p-6 rounded-xl space-y-4 border border-slate-200">
+                  <h3 className="font-bold text-lg text-slate-800 border-b border-slate-200 pb-2">Review Your Information</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-slate-500">Full Name:</span>
+                      <p className="font-semibold text-slate-900">{formData.firstName} {formData.middleName ? formData.middleName + ' ' : ''}{formData.lastName}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Date of Birth:</span>
+                      <p className="font-semibold text-slate-900">{formData.birthday}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Sex:</span>
+                      <p className="font-semibold text-slate-900">{formData.sex}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Civil Status:</span>
+                      <p className="font-semibold text-slate-900">{formData.maritalStatus}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Contact Number:</span>
+                      <p className="font-semibold text-slate-900">{formData.phone}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Email Address:</span>
+                      <p className="font-semibold text-slate-900">{formData.email}</p>
+                    </div>
+                    <div className="md:col-span-2">
+                      <span className="text-slate-500">Complete Address:</span>
+                      <p className="font-semibold text-slate-900">{formData.address}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-between pt-4">
+                  <Button type="button" variant="outline" onClick={() => setStep(2)} className="gap-2">
                     <ArrowLeft className="w-4 h-4" /> Back
                   </Button>
                   <Button type="submit" disabled={loading} className="gap-2 bg-green-600 hover:bg-green-700">

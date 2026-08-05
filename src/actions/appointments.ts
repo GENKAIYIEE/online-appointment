@@ -120,7 +120,7 @@ export async function rescheduleAppointment(
       }
 
       // Concurrency Guard: Lock the schedule row
-      await tx.$executeRaw`SELECT 1 FROM "Schedule" WHERE id = ${newSchedule.id} FOR UPDATE`;
+      await tx.$executeRaw`SELECT 1 FROM "schedules" WHERE id = ${newSchedule.id} FOR UPDATE`;
 
       // 3. Check slot availability (excluding current appointment)
       const conflict = await tx.appointment.findFirst({
