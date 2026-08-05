@@ -18,7 +18,7 @@ import {
 import { CalendarClock, Lock, ChevronLeft, ChevronRight, X, ArrowRight } from "lucide-react";
 import { getMonthlySlotSummary, getPatientDaySlotDetail, DaySummary, SlotDetail } from "@/actions/slots-management";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn, isTimeSlotPassedPHT } from "@/lib/utils";
 
 type Service = {
   id: string;
@@ -348,51 +348,87 @@ export function PatientSlotsClient({ services }: { services: Service[] }) {
               ) : (
                 <div className="space-y-4">
                   <div className="grid grid-cols-3 gap-3">
-                    {dayDetails.map((slot, i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          "relative flex flex-col justify-center p-3 rounded-[8px] border-[1px] transition-all group text-left",
-                          slot.status === "Available" && "border-green-200 bg-white hover:border-green-400 hover:bg-green-50",
-                          slot.status === "Booked" && "border-slate-200 bg-slate-100 opacity-90",
-                          slot.status === "Disabled" && "border-slate-200 bg-slate-100 opacity-90"
-                        )}
-                      >
-                        <div className={cn("font-bold text-[14px]", (slot.status === "Disabled" || slot.status === "Booked") ? "text-slate-500" : "text-green-700")}>
-                          {slot.time_slot}
-                        </div>
-                        
-                        {slot.status === "Available" && (
-                          <button 
-                            onClick={() => handleBookSlot(slot.time_slot)}
-                            className="absolute inset-0 bg-green-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-md font-semibold text-xs gap-1 cursor-pointer"
+                    {(() => {
+                      const now = new Date();
+                      const formatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: 'numeric', day: 'numeric' });
+                      const parts = formatter.formatToParts(now);
+                      const phtYear = parseInt(parts.find(p => p.type === 'year')?.value || '0', 10);
+                      const phtMonth = parseInt(parts.find(p => p.type === 'month')?.value || '1', 10) - 1;
+                      const phtDay = parseInt(parts.find(p => p.type === 'day')?.value || '1', 10);
+                      
+                      const isTodayPHT = selectedDate?.getFullYear() === phtYear && selectedDate?.getMonth() === phtMonth && selectedDate?.getDate() === phtDay;
+
+                      return dayDetails.map((slot, i) => {
+                        const isPassed = isTodayPHT && isTimeSlotPassedPHT(slot.time_slot);
+                        const displayStatus = isPassed && slot.status === "Available" ? "Passed" : slot.status;
+
+                        return (
+                          <div
+                            key={i}
+                            className={cn(
+                              "relative flex flex-col justify-center p-3 rounded-[8px] border-[1px] transition-all group text-left",
+                              displayStatus === "Available" && "border-green-200 bg-white hover:border-green-400 hover:bg-green-50",
+                              displayStatus === "Passed" && "border-slate-200 bg-slate-50 opacity-60",
+                              displayStatus === "Booked" && "border-slate-200 bg-slate-100 opacity-90",
+                              displayStatus === "Disabled" && "border-slate-200 bg-slate-100 opacity-90"
+                            )}
                           >
-                            Book <ArrowRight className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        
-                        {slot.status === "Booked" && (
-                          <div className="mt-0.5 text-[12px] font-medium truncate flex items-center gap-1 w-full text-slate-600">
-                            <Lock className="w-3 h-3 shrink-0" /> Booked
+                            <div className={cn("font-bold text-[14px]", (displayStatus === "Disabled" || displayStatus === "Booked") ? "text-slate-500" : displayStatus === "Passed" ? "text-slate-500" : "text-green-700")}>
+                              {slot.time_slot}
+                            </div>
+                            
+                            {displayStatus === "Available" && (
+                              <button 
+                                onClick={() => handleBookSlot(slot.time_slot)}
+                                className="absolute inset-0 bg-green-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-md font-semibold text-xs gap-1 cursor-pointer"
+                              >
+                                Book <ArrowRight className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            
+                            {displayStatus === "Passed" && (
+                              <div className="mt-0.5 text-[12px] font-medium text-slate-500">
+                                Passed
+                              </div>
+                            )}
+
+                            {displayStatus === "Booked" && (
+                              <div className="mt-0.5 text-[12px] font-medium truncate flex items-center gap-1 w-full text-slate-600">
+                                <Lock className="w-3 h-3 shrink-0" /> Booked
+                              </div>
+                            )}
+                            
+                            {displayStatus === "Disabled" && (
+                              <div className="mt-0.5 text-[12px] font-medium text-slate-600 flex items-center gap-1">
+                                <Lock className="w-3 h-3 shrink-0" /> Unavailable
+                              </div>
+                            )}
                           </div>
-                        )}
-                        
-                        {slot.status === "Disabled" && (
-                          <div className="mt-0.5 text-[12px] font-medium text-slate-600 flex items-center gap-1">
-                            <Lock className="w-3 h-3 shrink-0" /> Unavailable
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                        );
+                      });
+                    })()}
                   </div>
 
-                  {dayDetails.length > 0 && (
-                    <div className="mt-6 pt-4 border-t border-slate-100 text-center text-sm font-medium text-slate-500 bg-slate-50 rounded-lg p-3">
-                      <span className="text-green-600">{dayDetails.filter(d => d.status === "Available").length} available</span>
-                      <span className="mx-2">·</span>
-                      <span className="text-slate-700">{dayDetails.filter(d => d.status === "Booked" || d.status === "Disabled").length} booked/unavailable</span>
-                    </div>
-                  )}
+                  {dayDetails.length > 0 && (() => {
+                    const now = new Date();
+                    const formatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: 'numeric', day: 'numeric' });
+                    const parts = formatter.formatToParts(now);
+                    const phtYear = parseInt(parts.find(p => p.type === 'year')?.value || '0', 10);
+                    const phtMonth = parseInt(parts.find(p => p.type === 'month')?.value || '1', 10) - 1;
+                    const phtDay = parseInt(parts.find(p => p.type === 'day')?.value || '1', 10);
+                    
+                    const isTodayPHT = selectedDate?.getFullYear() === phtYear && selectedDate?.getMonth() === phtMonth && selectedDate?.getDate() === phtDay;
+                    
+                    const availableSlots = dayDetails.filter(d => d.status === "Available" && (!isTodayPHT || !isTimeSlotPassedPHT(d.time_slot))).length;
+
+                    return (
+                      <div className="mt-6 pt-4 border-t border-slate-100 text-center text-sm font-medium text-slate-500 bg-slate-50 rounded-lg p-3">
+                        <span className="text-green-600">{availableSlots} available</span>
+                        <span className="mx-2">·</span>
+                        <span className="text-slate-700">{dayDetails.filter(d => d.status === "Booked" || d.status === "Disabled").length} booked/unavailable</span>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>

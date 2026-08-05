@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { verifySession } from "@/lib/session";
 import { createAuditLog } from "@/lib/audit";
 import { getClinicConfig } from "@/actions/clinic-config";
+import { isTimeSlotPassedPHT } from "@/lib/utils";
 
 export async function getServices() {
   try {
@@ -130,7 +131,7 @@ export async function getMonthlySlotSummary(
 
     // Build summary for every day in the month
     const summary: DaySummary[] = [];
-    const daysInMonth = endDate.getDate();
+    const daysInMonth = lastDay;
     
     for (let day = 1; day <= daysInMonth; day++) {
       const iterDate = new Date(year, month, day);
@@ -161,8 +162,38 @@ export async function getMonthlySlotSummary(
       const disabled = disabledCountByDate[dStr] || 0;
       const booked = bookedCountByDate[dStr] || 0;
       const totalSlots = isUltrasound ? config.ultrasoundSlots.length : config.allSlots.length;
-      const available = Math.max(0, totalSlots - disabled - booked);
+      
+      let passedCount = 0;
+      const now = new Date();
+      const phtNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+      const todayYear = phtNow.getUTCFullYear();
+      const todayMonth = String(phtNow.getUTCMonth() + 1).padStart(2, '0');
+      const todayDate = String(phtNow.getUTCDate()).padStart(2, '0');
+      const todayStr = `${todayYear}-${todayMonth}-${todayDate}`;
 
+      if (dStr === todayStr) {
+        const slotsList = isUltrasound ? config.ultrasoundSlots : config.allSlots;
+        
+        const dayDisabledSet = new Set(
+          disabledSlots
+            .filter(d => getLocalDateString(d.date) === dStr)
+            .map(d => d.time_slot)
+        );
+        
+        const dayBookedSet = new Set(
+          appointments
+            .filter(a => a.schedule && getLocalDateString(a.schedule.date) === dStr)
+            .map(a => a.time_slot)
+        );
+        
+        passedCount = slotsList.filter(slot => {
+          const isPassed = isTimeSlotPassedPHT(slot);
+          const isTaken = dayDisabledSet.has(slot) || dayBookedSet.has(slot);
+          return isPassed && !isTaken;
+        }).length;
+      }
+
+      const available = Math.max(0, totalSlots - disabled - booked - passedCount);
       const isLeave = leaveDateSet.has(dStr);
 
       summary.push({
