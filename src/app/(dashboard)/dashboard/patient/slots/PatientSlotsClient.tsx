@@ -245,25 +245,32 @@ export function PatientSlotsClient({ services }: { services: Service[] }) {
                     if (isFetchingMonth) {
                       content = <div className="w-[80%] mx-auto h-6 bg-slate-100 animate-pulse rounded-full mt-3" />;
                     } else if (dayData) {
-                      const { available, total, isLeave } = dayData;
+                      const { available, total, isLeave, booked } = dayData;
                       
+                      const isFullyBooked = available === 0 && booked === total;
+                      const isUnavailable = available === 0 && booked < total;
+
                       content = (
                         <div className="flex justify-center mt-3">
                           <div className={cn(
                             "rounded-[20px] px-[8px] sm:px-[12px] py-[3px] sm:py-[4px] text-[10px] sm:text-[12px] font-medium border text-center leading-tight",
                             isLeave
                               ? "bg-amber-50 text-amber-600 border-amber-200"
-                              : available === 0 
+                              : isFullyBooked 
                                 ? "bg-[#FEF2F2] text-[#EF4444] border-[#FECACA]" 
-                                : available === total
-                                  ? "bg-[#F0FDF4] text-[#16a34a] border-[#bbf7d0]"
-                                  : "bg-[#FFFBEB] text-[#D97706] border-[#FDE68A]"
+                                : isUnavailable
+                                  ? "bg-slate-100 text-slate-500 border-slate-200"
+                                  : available === total
+                                    ? "bg-[#F0FDF4] text-[#16a34a] border-[#bbf7d0]"
+                                    : "bg-[#FFFBEB] text-[#D97706] border-[#FDE68A]"
                           )}>
                             {isLeave
                               ? "Doctor is on leave"
-                              : available === 0 
+                              : isFullyBooked 
                                 ? "Fully Booked" 
-                                : `${available} / ${total} available`}
+                                : isUnavailable
+                                  ? "Closed"
+                                  : `${available} / ${total} available`}
                           </div>
                         </div>
                       );
