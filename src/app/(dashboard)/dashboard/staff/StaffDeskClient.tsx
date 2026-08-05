@@ -628,7 +628,27 @@ export function StaffDeskClient({
 
   // Slot calculations
   const currentSlots = selectedService?.name === "Ultrasound" ? clinicConfig.ultrasoundSlots : clinicConfig.allSlots;
-  const availableCount = currentSlots.length - bookedSlots.length;
+  
+  const getPassedSlotsCount = (selectedDateStr: string, slots: string[], booked: string[]) => {
+    if (!selectedDateStr) return 0;
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: 'numeric', day: 'numeric' });
+    const parts = formatter.formatToParts(now);
+    const phtYear = parseInt(parts.find(p => p.type === 'year')?.value || '0', 10);
+    const phtMonth = parseInt(parts.find(p => p.type === 'month')?.value || '1', 10) - 1;
+    const phtDay = parseInt(parts.find(p => p.type === 'day')?.value || '1', 10);
+    
+    const selectedDateObj = new Date(selectedDateStr);
+    const isToday = selectedDateObj.getFullYear() === phtYear && selectedDateObj.getMonth() === phtMonth && selectedDateObj.getDate() === phtDay;
+    
+    if (isToday) {
+      return slots.filter(slot => isTimeSlotPassedPHT(slot) && !booked.includes(slot)).length;
+    }
+    return 0;
+  };
+
+  const passedSlotsCount = getPassedSlotsCount(date, currentSlots, bookedSlots);
+  const availableCount = currentSlots.length - bookedSlots.length - passedSlotsCount;
   const slotCountColor =
     availableCount === 0
       ? "text-red-600 font-medium"
@@ -889,7 +909,6 @@ export function StaffDeskClient({
                     <select value={timeSlot} onChange={(e) => setTimeSlot(e.target.value)} className={inputCls("timeSlot")}>
                       <option value="">Select Time</option>
                       {(() => {
-                        // Check if selected date is today in PHT
                         const now = new Date();
                         const formatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: 'numeric', day: 'numeric' });
                         const parts = formatter.formatToParts(now);
@@ -1313,7 +1332,8 @@ export function StaffDeskClient({
             {manageView === "reschedule" && (() => {
               const mgSelectedService = services.find(s => s.id === mgServiceId);
               const mgSlots = mgSelectedService?.name === "Ultrasound" ? clinicConfig.ultrasoundSlots : clinicConfig.allSlots;
-              const mgAvailableCount = mgSlots.length - mgBookedSlots.length;
+              const mgPassedSlotsCount = getPassedSlotsCount(mgDate, mgSlots, mgBookedSlots);
+              const mgAvailableCount = mgSlots.length - mgBookedSlots.length - mgPassedSlotsCount;
               return (
                 <div className="px-6 pb-6 space-y-4">
                   <p className="text-sm font-semibold text-slate-700 mt-2">Select new service, date, and time:</p>
@@ -1405,7 +1425,22 @@ export function StaffDeskClient({
                           <option value="">Select Time</option>
                           {mgSlots.map(slot => {
                             const taken = mgBookedSlots.includes(slot);
-                            return <option key={slot} value={slot} disabled={taken} className={taken ? "text-slate-400" : ""}>{slot}{taken ? " (Taken)" : ""}</option>;
+                            
+                            const now = new Date();
+                            const formatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: 'numeric', day: 'numeric' });
+                            const parts = formatter.formatToParts(now);
+                            const phtYear = parseInt(parts.find(p => p.type === 'year')?.value || '0', 10);
+                            const phtMonth = parseInt(parts.find(p => p.type === 'month')?.value || '1', 10) - 1;
+                            const phtDay = parseInt(parts.find(p => p.type === 'day')?.value || '1', 10);
+                            
+                            const selectedDateObj = new Date(mgDate);
+                            const isToday = selectedDateObj.getFullYear() === phtYear && selectedDateObj.getMonth() === phtMonth && selectedDateObj.getDate() === phtDay;
+                            
+                            const isPassed = isToday && isTimeSlotPassedPHT(slot);
+                            const disabled = taken || isPassed;
+                            const labelSuffix = taken ? " (Taken)" : isPassed ? " (Passed)" : "";
+                            
+                            return <option key={slot} value={slot} disabled={disabled} className={disabled ? "text-slate-400 bg-slate-50" : ""}>{slot}{labelSuffix}</option>;
                           })}
                         </select>
                       )}
