@@ -168,9 +168,9 @@ export async function createAppointment(data: {
         });
       }
 
-      // 1b. Concurrency Guard: Lock the schedule row. This forces any parallel transaction 
+      // 1b. Concurrency Guard: Lock the schedule row. This forces any parallel transaction
       // trying to book on the same day to wait until this transaction completes.
-      await tx.$executeRaw`SELECT 1 FROM "Schedule" WHERE id = ${schedule.id} FOR UPDATE`;
+      await tx.$executeRaw`SELECT 1 FROM "schedules" WHERE id = ${schedule.id} FOR UPDATE`;
 
       // 2. Race-condition guard: re-check the slot is still free
       const existingAppt = await tx.appointment.findFirst({
@@ -206,8 +206,6 @@ export async function createAppointment(data: {
       }
 
       // 2b. Prevent duplicate: same profile booking same service on same date
-      // If subProfileId is provided, guard is per sub-profile.
-      // If null, guard is for the account holder (user_id with no subProfileId).
       const duplicateBooking = await tx.appointment.findFirst({
         where: {
           user_id: patientId,
@@ -246,7 +244,7 @@ export async function createAppointment(data: {
         data: { booked_count: { increment: 1 } },
       });
 
-      // 5. Notify the patient
+      // 5. Notify the patient (small, same-context write — keep inside transaction)
       const formattedDate = formatDatePHT(date, "MMM d, yyyy");
       const bookedOn = formatDatePHT(new Date(), "MMM d, yyyy");
       await tx.notification.create({
@@ -258,29 +256,33 @@ export async function createAppointment(data: {
         },
       });
 
-      // 6. Notify Admins, Staff, and assigned Doctor
-      await createAdminNotification(
+      return { appointment, formattedDate };
+    });
+
+    // 6. Fan-out notifications AFTER transaction commits — keeps the transaction fast
+    const { appointment, formattedDate } = result;
+    const { createDoctorNotification } = await import("@/lib/notifications");
+
+    await Promise.allSettled([
+      createAdminNotification(
         `New online appointment booked for ${data.service} on ${formattedDate} at ${data.timeSlot}.`,
         appointment.id
-      );
-      await createStaffNotification(
+      ),
+      createStaffNotification(
         `New online appointment booked for ${data.service} on ${formattedDate} at ${data.timeSlot}.`,
         appointment.id
-      );
-      const { createDoctorNotification } = await import("@/lib/notifications");
-      await createDoctorNotification(
+      ),
+      createDoctorNotification(
         `New appointment booked for your service on ${formattedDate} at ${data.timeSlot}.`,
         assignedDoctor.id,
         appointment.id
-      );
-
-      return appointment;
-    });
+      ),
+    ]);
 
     revalidatePath("/dashboard/patient/appointments");
     revalidatePath("/dashboard/patient");
 
-    return { success: true, data: result };
+    return { success: true, data: appointment };
   } catch (error: any) {
     console.error("Error creating appointment:", error);
     return {

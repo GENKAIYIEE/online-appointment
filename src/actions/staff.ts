@@ -309,7 +309,7 @@ export async function registerWalkIn(data: {
       }
 
       // Concurrency Guard: Lock the schedule row to prevent parallel double-bookings
-      await tx.$executeRaw`SELECT 1 FROM "Schedule" WHERE id = ${schedule.id} FOR UPDATE`;
+      await tx.$executeRaw`SELECT 1 FROM "schedules" WHERE id = ${schedule.id} FOR UPDATE`;
 
       // Double-booking check
       const existingAppt = await tx.appointment.findFirst({
@@ -364,20 +364,9 @@ export async function registerWalkIn(data: {
         timeSlot: data.timeSlot
       });
 
-      // Notify Admins and assigned Doctor
-      await createAdminNotification(
-        `New walk-in appointment registered for ${data.fullName} (Service: ${service.name}) on ${data.date} at ${data.timeSlot}.`,
-        appt.id
-      );
-      const { createDoctorNotification } = await import("@/lib/notifications");
-      await createDoctorNotification(
-        `New walk-in patient registered for your service on ${data.date} at ${data.timeSlot}.`,
-        service.assignedDoctor!.id,
-        appt.id
-      );
-
       return {
         appt,
+        doctorId: service.assignedDoctor!.id,
         slip: {
           id: appt.id,
           fullName: data.fullName,
@@ -388,6 +377,20 @@ export async function registerWalkIn(data: {
         },
       };
     });
+
+    // Fan-out notifications AFTER transaction commits — keeps the transaction fast
+    const { createDoctorNotification } = await import("@/lib/notifications");
+    await Promise.allSettled([
+      createAdminNotification(
+        `New walk-in appointment registered for ${data.fullName} (Service: ${result.slip.service}) on ${data.date} at ${data.timeSlot}.`,
+        result.appt.id
+      ),
+      createDoctorNotification(
+        `New walk-in patient registered for your service on ${data.date} at ${data.timeSlot}.`,
+        result.doctorId,
+        result.appt.id
+      ),
+    ]);
 
     revalidatePath("/dashboard/staff");
     revalidatePath("/dashboard/staff/slots");
@@ -583,7 +586,7 @@ export async function staffRescheduleAppointment(data: {
       }
 
       // Concurrency Guard: Lock the schedule row
-      await tx.$executeRaw`SELECT 1 FROM "Schedule" WHERE id = ${newSchedule.id} FOR UPDATE`;
+      await tx.$executeRaw`SELECT 1 FROM "schedules" WHERE id = ${newSchedule.id} FOR UPDATE`;
 
       // Double-booking check: same service, same time slot, same date
       const conflict = await tx.appointment.findFirst({
