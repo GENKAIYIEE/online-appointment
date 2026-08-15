@@ -22,7 +22,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, UserPlus, Users, Pencil, Trash2 } from "lucide-react";
+import { Loader2, UserPlus, Users, Pencil, Trash2, Eye, EyeOff } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { createAdmin, getAdmins, updateAdmin, deleteUser } from "@/actions/users";
 
 export function AdminManagement() {
@@ -32,6 +33,23 @@ export function AdminManagement() {
   const [newAdminPassword, setNewAdminPassword] = useState("");
   const [adminError, setAdminError] = useState("");
   const [adminLoading, setAdminLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const getPasswordStrength = (password: string) => {
+    if (!password) return { score: 0, label: "", color: "bg-slate-200", isStrong: false };
+    let score = 0;
+    if (password.length >= 8) score += 1;
+    if (/[a-z]/.test(password)) score += 1;
+    if (/[A-Z]/.test(password)) score += 1;
+    if (/\d/.test(password)) score += 1;
+    if (/[^a-zA-Z\d]/.test(password)) score += 1;
+
+    if (score <= 2) return { score, label: "Weak", color: "bg-red-500", isStrong: false };
+    if (score <= 4) return { score, label: "Good", color: "bg-amber-500", isStrong: false };
+    return { score, label: "Strong", color: "bg-emerald-500", isStrong: true };
+  };
+
+  const strength = getPasswordStrength(newAdminPassword);
 
   // --- List Admins ---
   const [adminsList, setAdminsList] = useState<any[]>([]);
@@ -73,6 +91,10 @@ export function AdminManagement() {
     }
     if (newAdminPassword.length < 8) {
       setAdminError("Password must be at least 8 characters.");
+      return;
+    }
+    if (!strength.isStrong) {
+      setAdminError("Password is not strong enough. Please use a stronger password.");
       return;
     }
 
@@ -195,17 +217,45 @@ export function AdminManagement() {
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="new-admin-password">Password</Label>
-              <Input
-                id="new-admin-password"
-                type="password"
-                value={newAdminPassword}
-                onChange={(e) => {
-                  setNewAdminPassword(e.target.value);
-                  setAdminError("");
-                }}
-                placeholder="At least 8 characters"
-                className="bg-white max-w-sm"
-              />
+              <div className="relative max-w-sm">
+                <Input
+                  id="new-admin-password"
+                  type={showPassword ? "text" : "password"}
+                  value={newAdminPassword}
+                  onChange={(e) => {
+                    setNewAdminPassword(e.target.value);
+                    setAdminError("");
+                  }}
+                  placeholder="At least 8 characters"
+                  className="bg-white pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {newAdminPassword && (
+                <div className="max-w-sm mt-2">
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-slate-500 font-medium">Password strength</span>
+                    <span className={cn("font-medium", {
+                      "text-red-600": strength.label === "Weak",
+                      "text-amber-600": strength.label === "Good",
+                      "text-emerald-600": strength.label === "Strong",
+                    })}>
+                      {strength.label}
+                    </span>
+                  </div>
+                  <div className="flex h-1.5 gap-1 w-full">
+                    <div className={cn("flex-1 rounded-full transition-colors", newAdminPassword ? strength.color : "bg-slate-200")} />
+                    <div className={cn("flex-1 rounded-full transition-colors", strength.score >= 3 ? strength.color : "bg-slate-200")} />
+                    <div className={cn("flex-1 rounded-full transition-colors", strength.score >= 5 ? strength.color : "bg-slate-200")} />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
