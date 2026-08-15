@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Stethoscope, ArrowRight, ArrowLeft } from "lucide-react";
+import { Stethoscope, ArrowRight, ArrowLeft, Eye, EyeOff } from "lucide-react";
 
 const formSchema = z.object({
   firstName: z.string().min(2, "First name must be at least 2 characters"),
@@ -47,7 +47,8 @@ const formSchema = z.object({
     .min(8, "Password must be at least 8 characters")
     .regex(/[a-z]/, "Must contain at least one lowercase letter")
     .regex(/[A-Z]/, "Must contain at least one uppercase letter")
-    .regex(/[0-9]/, "Must contain at least one number"),
+    .regex(/[0-9]/, "Must contain at least one number")
+    .regex(/[^a-zA-Z0-9]/, "Must contain at least one special character"),
   confirmPassword: z.string(),
   terms: z.boolean().refine((val) => val === true, "You must agree to the terms"),
 }).refine((data) => data.password === data.confirmPassword, {
@@ -88,6 +89,8 @@ export default function RegisterPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const {
     register,
@@ -335,7 +338,21 @@ export default function RegisterPage() {
 
                 <div className="space-y-2">
                   <Label className="text-slate-700 font-bold">Password</Label>
-                  <Input type="password" {...register("password")} placeholder="Create a password" className={errors.password ? 'border-red-500' : ''} />
+                  <div className="relative">
+                    <Input 
+                      type={showPassword ? "text" : "password"} 
+                      {...register("password")} 
+                      placeholder="Create a password" 
+                      className={`pr-10 ${errors.password ? 'border-red-500' : ''}`} 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                   
                   {/* Password Strength Indicator */}
                   <div className="flex gap-1 mt-1.5">
@@ -369,7 +386,21 @@ export default function RegisterPage() {
 
                 <div className="space-y-2">
                   <Label className="text-slate-700 font-bold">Confirm password</Label>
-                  <Input type="password" {...register("confirmPassword")} placeholder="Confirm password" className={errors.confirmPassword ? 'border-red-500' : ''} />
+                  <div className="relative">
+                    <Input 
+                      type={showConfirmPassword ? "text" : "password"} 
+                      {...register("confirmPassword")} 
+                      placeholder="Confirm password" 
+                      className={`pr-10 ${errors.confirmPassword ? 'border-red-500' : ''}`} 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                    >
+                      {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                   {errors.confirmPassword && <p className="text-red-500 text-xs">{errors.confirmPassword.message}</p>}
                 </div>
 

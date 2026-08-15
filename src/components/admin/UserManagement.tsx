@@ -48,6 +48,7 @@ import {
 } from "lucide-react";
 import { getServices } from "@/actions/slots-management";
 import { getServiceDoctorMap } from "@/actions/users";
+import { cn } from "@/lib/utils";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Service {
@@ -77,6 +78,22 @@ export function UserManagement() {
   const [assignedServiceId, setAssignedServiceId] = useState("");
   
   const [creating, setCreating] = useState(false);
+
+  const getPasswordStrength = (pwd: string) => {
+    if (!pwd) return { score: 0, label: "", color: "bg-slate-200", isStrong: false };
+    let score = 0;
+    if (pwd.length >= 8) score += 1;
+    if (/[a-z]/.test(pwd)) score += 1;
+    if (/[A-Z]/.test(pwd)) score += 1;
+    if (/\d/.test(pwd)) score += 1;
+    if (/[^a-zA-Z\d]/.test(pwd)) score += 1;
+
+    if (score <= 2) return { score, label: "Weak", color: "bg-red-500", isStrong: false };
+    if (score <= 4) return { score, label: "Good", color: "bg-amber-500", isStrong: false };
+    return { score, label: "Strong", color: "bg-emerald-500", isStrong: true };
+  };
+
+  const strength = getPasswordStrength(password);
 
   // List and Meta state
   const [users, setUsers] = useState<UserRecord[]>([]);
@@ -215,6 +232,10 @@ export function UserManagement() {
     e.preventDefault();
     if (!name.trim() || !email.trim() || !password) {
       toast.error("Name, email, and password are required");
+      return;
+    }
+    if (!strength.isStrong) {
+      toast.error("Password is not strong enough. Please use a stronger password.");
       return;
     }
     if (role === "DOCTOR" && !assignedServiceId) {
@@ -375,7 +396,7 @@ export function UserManagement() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+          <form onSubmit={handleSubmit} className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
             <div className="sm:col-span-1">
               <label className="block text-sm font-medium mb-1" htmlFor="reg-name">
                 Name <span className="text-red-500">*</span>
@@ -421,6 +442,25 @@ export function UserManagement() {
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
+              {password && (
+                <div className="w-full mt-2">
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-slate-500 font-medium">Password strength</span>
+                    <span className={cn("font-medium", {
+                      "text-red-600": strength.label === "Weak",
+                      "text-amber-600": strength.label === "Good",
+                      "text-emerald-600": strength.label === "Strong",
+                    })}>
+                      {strength.label}
+                    </span>
+                  </div>
+                  <div className="flex h-1.5 gap-1 w-full">
+                    <div className={cn("flex-1 rounded-full transition-colors", password ? strength.color : "bg-slate-200")} />
+                    <div className={cn("flex-1 rounded-full transition-colors", strength.score >= 3 ? strength.color : "bg-slate-200")} />
+                    <div className={cn("flex-1 rounded-full transition-colors", strength.score >= 5 ? strength.color : "bg-slate-200")} />
+                  </div>
+                </div>
+              )}
             </div>
             <div className="sm:col-span-1">
               <label className="block text-sm font-medium mb-1" htmlFor="reg-phone">
@@ -477,6 +517,9 @@ export function UserManagement() {
             )}
 
             <div className="sm:col-span-1">
+              <label className="block text-sm font-medium mb-1 opacity-0 select-none" aria-hidden="true">
+                Submit
+              </label>
               <Button
                 type="submit"
                 disabled={creating}
