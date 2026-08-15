@@ -54,6 +54,7 @@ const navItems: Record<NonNullable<Role>, NavItem[]> = {
     { name: "Slot Management", href: "/dashboard/staff/slots", icon: CalendarClock },
     { name: "Patient Records", href: "/dashboard/staff/records", icon: ClipboardCheck },
     { name: "Medicine Records", href: "/dashboard/staff/medicine", icon: Pill },
+    { name: "Notifications", href: "/dashboard/staff/notifications", icon: Bell, badgeKey: "total" },
   ],
   doctor: [
     { name: "Doctor's Console", href: "/dashboard/doctor", icon: MonitorCheck },

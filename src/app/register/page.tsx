@@ -309,8 +309,16 @@ export default function RegisterPage() {
                   {errors.address && <p className="text-red-500 text-xs">{errors.address.message}</p>}
                 </div>
 
-                <div className="flex justify-end pt-4">
-                  <Button type="button" onClick={nextStep} className="gap-2 bg-green-600 hover:bg-green-700">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4">
+                  <div className="lg:hidden w-full text-center sm:text-left order-2 sm:order-1">
+                    <p className="text-sm text-slate-500">
+                      Already have an account?{" "}
+                      <a href="/login" className="text-green-600 font-semibold hover:underline">
+                        Sign in
+                      </a>
+                    </p>
+                  </div>
+                  <Button type="button" onClick={nextStep} className="w-full sm:w-auto gap-2 bg-green-600 hover:bg-green-700 order-1 sm:order-2 ml-auto">
                     Next Step <ArrowRight className="w-4 h-4" />
                   </Button>
                 </div>

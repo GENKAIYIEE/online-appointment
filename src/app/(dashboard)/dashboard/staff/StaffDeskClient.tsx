@@ -130,6 +130,8 @@ export function StaffDeskClient({
   const [todayAppointments, setTodayAppointments] = useState(initialTodayAppointments.data);
   const [awaitingVitals, setAwaitingVitals] = useState(initialAwaitingVitals.data);
   const [upcomingAppointments, setUpcomingAppointments] = useState<UpcomingAppointment[]>(initialUpcomingAppointments.data);
+  const [upcomingFilter, setUpcomingFilter] = useState<"ALL" | "WALK_IN" | "ONLINE">("ALL");
+  const [todayFilter, setTodayFilter] = useState<"ALL" | "WALK_IN" | "ONLINE">("ALL");
 
   useEffect(() => { setTodayAppointments(initialTodayAppointments.data); }, [initialTodayAppointments]);
   useEffect(() => { setAwaitingVitals(initialAwaitingVitals.data); }, [initialAwaitingVitals]);
@@ -498,7 +500,11 @@ export function StaffDeskClient({
     if (!fullName.trim()) e.fullName = "Full Name is required";
     if (!birthday) e.birthday = "Birthday is required";
     if (!sex) e.sex = "Sex is required";
-    if (!contactNumber.trim()) e.contactNumber = "Contact Number is required";
+    if (!contactNumber.trim()) {
+      e.contactNumber = "Contact Number is required";
+    } else if (!/^\d{11}$/.test(contactNumber.trim())) {
+      e.contactNumber = "Contact number must be exactly 11 digits";
+    }
     if (!address.trim()) e.address = "Address is required";
     if (!serviceId) e.serviceId = "Service is required";
     if (!date) e.date = "Date is required";
@@ -600,8 +606,8 @@ export function StaffDeskClient({
         format: "a4"
       });
       
-      // Center the small slip horizontally at the top of the A4 page
-      const xOffset = (a4WidthMm - printWidthMm) / 2;
+      // Align the small slip to the top-left of the A4 page
+      const xOffset = 15; // 15mm from left
       const yOffset = 15; // 15mm from top
       
       pdf.addImage(imgData, "PNG", xOffset, yOffset, printWidthMm, printHeightMm);
@@ -761,7 +767,17 @@ export function StaffDeskClient({
               {/* Contact Number */}
               <div className="space-y-1">
                 <label className="text-sm font-medium text-slate-700">Contact Number <span className="text-red-500">*</span></label>
-                <input type="text" value={contactNumber} onChange={(e) => setContactNumber(e.target.value)} className={inputCls("contactNumber")} placeholder="09XX-XXX-XXXX" />
+                <input 
+                  type="text" 
+                  value={contactNumber} 
+                  maxLength={11}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, "");
+                    setContactNumber(val);
+                  }} 
+                  className={inputCls("contactNumber")} 
+                  placeholder="09XXXXXXXXX" 
+                />
                 {errors.contactNumber && <p className="text-xs text-red-500">{errors.contactNumber}</p>}
               </div>
 
@@ -1052,8 +1068,13 @@ export function StaffDeskClient({
 
           {/* SECTION 3: TODAY'S WALK-IN LIST */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-            <div className="border-b border-slate-100 bg-slate-50/50 p-4">
+            <div className="border-b border-slate-100 bg-slate-50/50 p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <h3 className="font-semibold text-slate-800">Today's Appointments</h3>
+              <div className="flex bg-white rounded-lg border border-slate-200 p-1">
+                <button onClick={() => setTodayFilter("ALL")} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${todayFilter === "ALL" ? "bg-slate-100 text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"}`}>All</button>
+                <button onClick={() => setTodayFilter("WALK_IN")} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${todayFilter === "WALK_IN" ? "bg-slate-100 text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"}`}>Walk-in</button>
+                <button onClick={() => setTodayFilter("ONLINE")} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${todayFilter === "ONLINE" ? "bg-slate-100 text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"}`}>Online</button>
+              </div>
             </div>
             <div className="overflow-x-auto flex-1">
               <table className="w-full text-sm text-left">
@@ -1073,14 +1094,14 @@ export function StaffDeskClient({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {todayAppointments.length === 0 ? (
+                  {todayAppointments.filter(appt => todayFilter === "ALL" || appt.type === todayFilter).length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-4 py-10 text-center text-slate-400">
+                      <td colSpan={11} className="px-4 py-10 text-center text-slate-400">
                         No appointments for today.
                       </td>
                     </tr>
                   ) : (
-                    todayAppointments.map((appt, idx) => (
+                    todayAppointments.filter(appt => todayFilter === "ALL" || appt.type === todayFilter).map((appt, idx) => (
                       <tr key={appt.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="px-4 py-3 text-slate-400 font-mono text-xs">{(initialTodayAppointments.currentPage - 1) * 10 + idx + 1}</td>
                         <td className="px-4 py-3 font-semibold text-slate-900">{appt.patientName}</td>
@@ -1155,11 +1176,18 @@ export function StaffDeskClient({
         </div>
       </div>
 
-      {/* SECTION 4: UPCOMING ONLINE APPOINTMENTS */}
+      {/* SECTION 4: UPCOMING APPOINTMENTS */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="border-b border-slate-100 bg-slate-50/50 p-4">
-          <h3 className="font-semibold text-slate-800">Upcoming Appointments</h3>
-          <p className="text-xs text-slate-500 mt-1">All appointments scheduled for future dates.</p>
+        <div className="border-b border-slate-100 bg-slate-50/50 p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h3 className="font-semibold text-slate-800">Upcoming Appointments</h3>
+            <p className="text-xs text-slate-500 mt-1">All appointments scheduled for future dates.</p>
+          </div>
+          <div className="flex bg-white rounded-lg border border-slate-200 p-1">
+            <button onClick={() => setUpcomingFilter("ALL")} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${upcomingFilter === "ALL" ? "bg-slate-100 text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"}`}>All</button>
+            <button onClick={() => setUpcomingFilter("WALK_IN")} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${upcomingFilter === "WALK_IN" ? "bg-slate-100 text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"}`}>Walk-in</button>
+            <button onClick={() => setUpcomingFilter("ONLINE")} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${upcomingFilter === "ONLINE" ? "bg-slate-100 text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"}`}>Online</button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
@@ -1177,14 +1205,14 @@ export function StaffDeskClient({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {upcomingAppointments.length === 0 ? (
+              {upcomingAppointments.filter(appt => upcomingFilter === "ALL" || appt.type === upcomingFilter).length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-10 text-center text-slate-400">
                     No upcoming appointments.
                   </td>
                 </tr>
               ) : (
-                upcomingAppointments.map((appt, idx) => (
+                upcomingAppointments.filter(appt => upcomingFilter === "ALL" || appt.type === upcomingFilter).map((appt, idx) => (
                   <tr key={appt.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-4 py-3 text-slate-400 font-mono text-xs">{(initialUpcomingAppointments.currentPage - 1) * 10 + idx + 1}</td>
                     <td className="px-4 py-3 font-semibold text-slate-900">{appt.patientName}</td>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
-import { Plus, Search, Edit2, Trash2, X, AlertTriangle, Pill, Download } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, X, AlertTriangle, Pill, Download, CalendarDays } from "lucide-react";
 import { toast } from "sonner";
 import { exportMedicineRecordsToPDF } from "@/lib/exportPdf";
 import {
@@ -63,6 +63,10 @@ export function MedicineRecordsClient({ initialRecords }: { initialRecords: Medi
   const [recordToDelete, setRecordToDelete] = useState<string | null>(null);
   const [deletePassword, setDeletePassword] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Table search & date filter
+  const [tableSearch, setTableSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState("");
 
   // Debounced search for patients
   useEffect(() => {
@@ -250,6 +254,47 @@ export function MedicineRecordsClient({ initialRecords }: { initialRecords: Medi
 
       {/* Main Table */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+        {/* Search & Date Filter Bar */}
+        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row gap-3">
+          {/* Search */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search by patient, medicine, or staff name…"
+              value={tableSearch}
+              onChange={(e) => setTableSearch(e.target.value)}
+              className="w-full pl-9 pr-10 py-2.5 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300 transition"
+            />
+            {tableSearch && (
+              <button
+                onClick={() => setTableSearch("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          {/* Date Filter */}
+          <div className="relative shrink-0">
+            <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="pl-9 pr-3 py-2.5 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300 transition w-full sm:w-auto"
+            />
+          </div>
+          {/* Clear All Filters */}
+          {(tableSearch || dateFilter) && (
+            <button
+              onClick={() => { setTableSearch(""); setDateFilter(""); }}
+              className="shrink-0 px-3 py-2 text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 border border-slate-200 rounded-lg transition-colors"
+            >
+              Clear All
+            </button>
+          )}
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
@@ -263,14 +308,25 @@ export function MedicineRecordsClient({ initialRecords }: { initialRecords: Medi
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {records.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
-                    No medicine records found.
-                  </td>
-                </tr>
-              ) : (
-                records.map((record) => (
+              {(() => {
+                const filtered = records.filter(r => {
+                  const q = tableSearch.trim().toLowerCase();
+                  const matchesSearch = !q ||
+                    (r.patient?.name || r.walkInName || "").toLowerCase().includes(q) ||
+                    r.medicineName.toLowerCase().includes(q) ||
+                    r.staff.name.toLowerCase().includes(q);
+                  const matchesDate = !dateFilter ||
+                    new Date(r.date).toISOString().split("T")[0] === dateFilter;
+                  return matchesSearch && matchesDate;
+                });
+                if (filtered.length === 0) return (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                      {tableSearch || dateFilter ? "No records match your filters." : "No medicine records found."}
+                    </td>
+                  </tr>
+                );
+                return filtered.map((record) => (
                   <tr key={record.id} className="hover:bg-slate-50 transition-colors group">
                     <td className="px-6 py-4 text-slate-600 whitespace-nowrap">
                       {format(new Date(record.date), "MMM d, yyyy")}
@@ -323,8 +379,8 @@ export function MedicineRecordsClient({ initialRecords }: { initialRecords: Medi
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
+                ));
+              })()}
             </tbody>
           </table>
         </div>

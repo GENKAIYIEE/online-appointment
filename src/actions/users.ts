@@ -112,6 +112,110 @@ export async function createStaffOrDoctor(data: {
   });
 }
 
+export async function getAdmins() {
+  const session = await verifySession();
+  if (!session || session.role !== "ADMIN") {
+    throw new Error("Unauthorized: Only admins can perform this action.");
+  }
+
+  const admins = await prisma.user.findMany({
+    where: { role: "ADMIN" },
+    select: { id: true, name: true, email: true, created_at: true },
+    orderBy: { created_at: "desc" },
+  });
+
+  return admins;
+}
+
+export async function createAdmin(data: {
+  name: string;
+  email: string;
+  password?: string;
+  phone?: string | null;
+}) {
+  const session = await verifySession();
+  if (!session || session.role !== "ADMIN") {
+    throw new Error("Unauthorized: Only admins can perform this action.");
+  }
+
+  const existing = await prisma.user.findUnique({
+    where: { email: data.email.toLowerCase() },
+  });
+  if (existing) {
+    throw new Error("This email is already registered.");
+  }
+
+  const passwordHash = data.password ? await bcrypt.hash(data.password, 10) : undefined;
+
+  return await prisma.$transaction(async (tx) => {
+    const newAdmin = await tx.user.create({
+      data: {
+        name: data.name,
+        email: data.email.toLowerCase(),
+        password: passwordHash,
+        phone: data.phone ?? undefined,
+        role: "ADMIN",
+      },
+    });
+
+    await createAuditLog(tx, session.userId, "CREATE_USER", "User", newAdmin.id, {
+      role: "ADMIN",
+      email: newAdmin.email,
+      name: newAdmin.name,
+    });
+
+    return newAdmin;
+  });
+}
+
+export async function updateAdmin(
+  id: string,
+  data: {
+    name?: string;
+    email?: string;
+    password?: string;
+  }
+) {
+  const session = await verifySession();
+  if (!session || session.role !== "ADMIN") {
+    throw new Error("Unauthorized: Only admins can perform this action.");
+  }
+  const actorId = session.userId;
+
+  const passwordHash = data.password ? await bcrypt.hash(data.password, 10) : undefined;
+
+  return await prisma.$transaction(async (tx) => {
+    const admin = await tx.user.findUnique({
+      where: { id },
+    });
+    if (!admin) throw new Error("Administrator not found.");
+
+    if (data.email && data.email.toLowerCase() !== admin.email) {
+      const existing = await tx.user.findUnique({
+        where: { email: data.email.toLowerCase() },
+      });
+      if (existing) throw new Error("This email is already in use by another account.");
+    }
+
+    const updatedAdmin = await tx.user.update({
+      where: { id },
+      data: {
+        ...(data.name && { name: data.name }),
+        ...(data.email && { email: data.email.toLowerCase() }),
+        ...(passwordHash && { password: passwordHash }),
+      },
+    });
+
+    await createAuditLog(tx, actorId, "UPDATE_USER", "User", updatedAdmin.id, {
+      role: "ADMIN",
+      email: updatedAdmin.email,
+      name: updatedAdmin.name,
+    });
+
+    return updatedAdmin;
+  });
+}
+
 export async function updateStaffOrDoctor(
   id: string,
   data: {
@@ -271,6 +375,9 @@ export async function deleteUser(id: string) {
   const session = await verifySession();
   if (!session || session.role !== "ADMIN") {
     throw new Error('Unauthorized: Only admins can perform this action.');
+  }
+  if (id === session.userId) {
+    throw new Error("You cannot delete your own admin account.");
   }
   const actorId = session.userId;
 
