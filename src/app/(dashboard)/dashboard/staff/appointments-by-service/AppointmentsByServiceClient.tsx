@@ -9,7 +9,8 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
-  Download
+  Download,
+  Search
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,8 @@ export function AppointmentsByServiceClient({ initialDate, initialData }: Client
   const [data, setData] = useState<Record<string, AppointmentRow[]>>(initialData);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>(ALL_SERVICES);
+  const [typeFilter, setTypeFilter] = useState<"ALL" | "WALK_IN" | "ONLINE">("ALL");
+  const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 10;
 
@@ -126,29 +129,58 @@ export function AppointmentsByServiceClient({ initialDate, initialData }: Client
       </div>
 
       {/* Date Filter & Refresh */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col sm:flex-row items-center gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-slate-500 uppercase tracking-wide">
-            Select Date:
-          </span>
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full xl:w-auto">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">
+              Select Date:
+            </span>
+          </div>
+          <div className="relative w-full sm:w-auto flex-1 max-w-sm">
+            <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            <input
+              type="date"
+              value={date}
+              onChange={handleDateChange}
+              className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 transition"
+            />
+          </div>
+          <button
+            onClick={handleRefresh}
+            disabled={loading || !date}
+            className="w-full sm:w-auto px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 shrink-0"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4 text-slate-400" />}
+            Refresh
+          </button>
         </div>
-        <div className="relative w-full sm:w-auto flex-1 max-w-sm">
-          <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-          <input
-            type="date"
-            value={date}
-            onChange={handleDateChange}
-            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 transition"
-          />
+
+        {/* Type Filter */}
+        <div className="flex bg-slate-100 rounded-lg border border-slate-200 p-1 w-full xl:w-auto shrink-0">
+          <button onClick={() => { setTypeFilter("ALL"); setCurrentPage(1); }} className={`flex-1 xl:flex-none px-4 py-1.5 text-xs font-medium rounded-md transition-colors ${typeFilter === "ALL" ? "bg-white text-indigo-700 shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-700"}`}>All</button>
+          <button onClick={() => { setTypeFilter("WALK_IN"); setCurrentPage(1); }} className={`flex-1 xl:flex-none px-4 py-1.5 text-xs font-medium rounded-md transition-colors ${typeFilter === "WALK_IN" ? "bg-white text-indigo-700 shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-700"}`}>Walk-in</button>
+          <button onClick={() => { setTypeFilter("ONLINE"); setCurrentPage(1); }} className={`flex-1 xl:flex-none px-4 py-1.5 text-xs font-medium rounded-md transition-colors ${typeFilter === "ONLINE" ? "bg-white text-indigo-700 shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-700"}`}>Online</button>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={loading || !date}
-          className="w-full sm:w-auto px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-        >
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4 text-slate-400" />}
-          Refresh
-        </button>
+      </div>
+
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+        <input
+          type="text"
+          placeholder="Search patient name…"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+          className="w-full pl-9 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 transition"
+        />
+        {search && (
+          <button
+            onClick={() => { setSearch(""); setCurrentPage(1); }}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-medium"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {/* Loading Overlay */}
@@ -165,9 +197,16 @@ export function AppointmentsByServiceClient({ initialDate, initialData }: Client
           <div className="flex px-4 gap-1 items-end overflow-x-auto no-scrollbar">
             {[ALL_SERVICES, ...SERVICES].map((serviceName) => {
               const isActive = activeTab === serviceName;
-              const count = serviceName === ALL_SERVICES 
-                ? Object.values(data).flat().length 
-                : data[serviceName]?.length || 0;
+              let serviceArr = serviceName === ALL_SERVICES 
+                ? Object.values(data).flat() 
+                : data[serviceName] || [];
+              if (typeFilter !== "ALL") {
+                serviceArr = serviceArr.filter(a => a.type === typeFilter);
+              }
+              if (search.trim()) {
+                serviceArr = serviceArr.filter(a => a.patientName.toLowerCase().includes(search.trim().toLowerCase()));
+              }
+              const count = serviceArr.length;
               return (
                 <button
                   key={serviceName}
@@ -197,9 +236,19 @@ export function AppointmentsByServiceClient({ initialDate, initialData }: Client
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden relative z-0">
             <div className="p-0">
               {(() => {
-                const serviceAppointments = activeTab === ALL_SERVICES 
+                let serviceAppointments = activeTab === ALL_SERVICES 
                   ? Object.values(data).flat() 
                   : data[activeTab] || [];
+                
+                if (typeFilter !== "ALL") {
+                  serviceAppointments = serviceAppointments.filter(a => a.type === typeFilter);
+                }
+                if (search.trim()) {
+                  serviceAppointments = serviceAppointments.filter(a =>
+                    a.patientName.toLowerCase().includes(search.trim().toLowerCase())
+                  );
+                }
+
               const count = serviceAppointments.length;
               if (count === 0) {
                 return (
