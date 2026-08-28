@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { getBookedSlots, createAppointment, checkServiceAvailability, getUpcomingLeavesForService } from "@/actions/book-appointment";
+import { getBookedSlots, createAppointment, checkServiceAvailability } from "@/actions/book-appointment";
 import { getSubProfiles } from "@/actions/sub-profiles";
 import { cn, isTimeSlotPassedPHT } from "@/lib/utils";
 
@@ -50,7 +50,7 @@ const DEFAULT_SERVICES_ICONS: Record<string, any> = {
 /**
  * Returns true if a calendar date should be disabled (not selectable).
  * Rules:
- *  - Only Monday–Thursday are allowed
+ *  - Only Monday–Friday are allowed
  *  - All past dates are disabled
  *  - Today is disabled if current time is at or past 4:30 PM
  */
@@ -60,8 +60,8 @@ function isDateDisabled(date: Date, serviceName?: string): boolean {
   if (serviceName === "Ultrasound") {
     if (day !== 4) return true; // Only Thursday
   } else {
-    // Disable Friday, Saturday, Sunday
-    if (day === 0 || day === 5 || day === 6) return true;
+    // Disable Saturday, Sunday
+    if (day === 0 || day === 6) return true;
   }
 
   // Get current date/time in Asia/Manila
@@ -151,37 +151,12 @@ export default function BookAppointmentClient({
 
   // Slot data state
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
-  const [isDoctorOnLeave, setIsDoctorOnLeave] = useState(false);
   const [isFetchingSlots, setIsFetchingSlots] = useState(false);
   const [slotFetchError, setSlotFetchError] = useState<string | null>(null);
 
   // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCheckingService, setIsCheckingService] = useState(false);
-
-  // Upcoming leaves state
-  const [upcomingLeaves, setUpcomingLeaves] = useState<any[]>([]);
-  const [isFetchingLeaves, setIsFetchingLeaves] = useState(false);
-
-  // ── Fetch upcoming leaves whenever step 2 is active ──────────────
-  const fetchUpcomingLeaves = useCallback(async (isBackground = false) => {
-    if (!selectedService) return;
-    if (!isBackground) setIsFetchingLeaves(true);
-    try {
-      const res = await getUpcomingLeavesForService(selectedService);
-      setUpcomingLeaves(res);
-    } catch {
-      console.error("Failed to fetch upcoming leaves");
-    } finally {
-      if (!isBackground) setIsFetchingLeaves(false);
-    }
-  }, [selectedService]);
-
-  useEffect(() => {
-    if (step === 2 && selectedService) {
-      fetchUpcomingLeaves();
-    }
-  }, [step, selectedService, fetchUpcomingLeaves]);
 
   // ── Fetch booked slots from DB whenever date or service changes ──────────────
   const fetchBookedSlots = useCallback(async (isBackground = false) => {
@@ -202,7 +177,6 @@ export default function BookAppointmentClient({
         setBookedSlots([]);
       } else {
         setBookedSlots(result.bookedSlots);
-        setIsDoctorOnLeave(!!result.isLeave);
       }
     } catch {
       if (!isBackground) setSlotFetchError("Failed to load time slots. Please try again.");
@@ -222,12 +196,11 @@ export default function BookAppointmentClient({
   useEffect(() => {
     if (step === 2) {
       const interval = setInterval(() => {
-        if (selectedService) fetchUpcomingLeaves(true);
         if (selectedDate && selectedService) fetchBookedSlots(true);
       }, 10000); // 10 seconds
       return () => clearInterval(interval);
     }
-  }, [step, selectedDate, selectedService, fetchUpcomingLeaves, fetchBookedSlots]);
+  }, [step, selectedDate, selectedService, fetchBookedSlots]);
 
   // ── Derived values ───────────────────────────────────────────────────────────
   const selectedServiceName = selectedService;
@@ -235,18 +208,6 @@ export default function BookAppointmentClient({
   const currentSlots = selectedServiceName === "Ultrasound" ? clinicConfig.ultrasoundSlots : clinicConfig.allSlots;
   const availableCount = currentSlots.length - bookedSlots.length;
   const allSlotsTaken = availableCount === 0 && !isFetchingSlots && !slotFetchError && !!selectedDate;
-
-  // Process leave dates for Calendar
-  const leaveDateObjects: Date[] = [];
-  upcomingLeaves.forEach(leave => {
-    let curr = new Date(leave.startDate);
-    const end = new Date(leave.endDate);
-    while (curr <= end) {
-      // Create local date for the calendar
-      leaveDateObjects.push(new Date(curr.getUTCFullYear(), curr.getUTCMonth(), curr.getUTCDate()));
-      curr.setUTCDate(curr.getUTCDate() + 1);
-    }
-  });
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleNext = async () => {
@@ -274,7 +235,6 @@ export default function BookAppointmentClient({
     if (date !== selectedDate) {
       setSelectedDate(date);
       setSelectedTimeSlot(""); // clear time only on date change
-      setIsDoctorOnLeave(false);
     }
   };
 
@@ -541,12 +501,7 @@ export default function BookAppointmentClient({
                     onSelect={handleDateSelect}
                     disabled={[
                       (d) => isDateDisabled(d, selectedServiceName),
-                      ...leaveDateObjects
                     ]}
-                    modifiers={{ onLeave: leaveDateObjects }}
-                    modifiersClassNames={{
-                      onLeave: "bg-amber-100 text-amber-700 font-bold !cursor-not-allowed",
-                    }}
                     className="p-3"
                     classNames={{
                       selected:
@@ -561,26 +516,10 @@ export default function BookAppointmentClient({
                   <div className="flex items-start gap-2 text-xs text-slate-500 bg-blue-50 border border-blue-100 rounded-lg p-3">
                     <AlertCircle className="w-3.5 h-3.5 text-blue-400 mt-0.5 shrink-0" />
                     <span>
-                      Clinic is open <strong>Monday to Thursday</strong>,{" "}
+                      Clinic is open <strong>Monday to Friday</strong>,{" "}
                       <strong>8:00 AM to 5:00 PM</strong> only.
                     </span>
                   </div>
-                  {upcomingLeaves.map((leave, idx) => {
-                    const startStr = format(new Date(leave.startDate), "MMM d");
-                    const endStr = format(new Date(leave.endDate), "MMM d");
-                    const returnDate = new Date(leave.endDate);
-                    returnDate.setUTCDate(returnDate.getUTCDate() + 1);
-                    const returnStr = format(returnDate, "MMM d");
-                    return (
-                      <div key={idx} className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3">
-                        <AlertCircle className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
-                        <span>
-                          <strong>Doctor on Leave:</strong> {startStr} to {endStr}.<br />
-                          Will return on <strong>{returnStr}</strong>.
-                        </span>
-                      </div>
-                    );
-                  })}
                   {selectedServiceName === "Ultrasound" && (
                     <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3">
                       <AlertCircle className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
@@ -650,28 +589,15 @@ export default function BookAppointmentClient({
                 {selectedDate && !isFetchingSlots && !slotFetchError && (
                   <>
                     {/* Slot count indicator */}
-                    <p className={cn("text-sm font-semibold mb-4", isDoctorOnLeave ? "text-amber-600" : slotCountColor)}>
-                      {isDoctorOnLeave 
-                        ? "Doctor is on leave"
-                        : availableCount === 0
-                          ? "No slots available"
-                          : `${availableCount} slot${availableCount !== 1 ? "s" : ""} available`}
+                    <p className={cn("text-sm font-semibold mb-4", slotCountColor)}>
+                      {availableCount === 0
+                        ? "No slots available"
+                        : `${availableCount} slot${availableCount !== 1 ? "s" : ""} available`}
                     </p>
 
                     {/* All slots taken message */}
                     {allSlotsTaken ? (
-                      isDoctorOnLeave ? (
-                        <div className="flex flex-col items-center justify-center text-center py-10 bg-amber-50 rounded-xl border border-dashed border-amber-200">
-                          <AlertCircle className="w-8 h-8 text-amber-500 mb-2" />
-                          <p className="font-medium text-amber-700">
-                            The doctor is on leave on this date.
-                          </p>
-                          <p className="text-sm text-amber-600">
-                            Please select another date.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center justify-center text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                      <div className="flex flex-col items-center justify-center text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
                           <AlertCircle className="w-8 h-8 text-slate-400 mb-2" />
                           <p className="font-medium text-slate-700">
                             No available slots for this date.
@@ -680,7 +606,6 @@ export default function BookAppointmentClient({
                             Please select another date.
                           </p>
                         </div>
-                      )
                     ) : (
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                         {currentSlots.map((slot) => {

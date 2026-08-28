@@ -21,9 +21,9 @@ import {
   PieChart,
   ClipboardCheck,
   Users2,
-  CalendarOff,
   Pill,
-  Inbox
+  Inbox,
+  CalendarX
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ type NavItem = {
   name: string;
   href: string;
   icon: any;
-  badgeKey?: "appointments" | "leaves" | "users" | "total";
+  badgeKey?: "appointments" | "users" | "total";
 };
 
 const navItems: Record<NonNullable<Role>, NavItem[]> = {
@@ -59,14 +59,13 @@ const navItems: Record<NonNullable<Role>, NavItem[]> = {
   doctor: [
     { name: "Doctor's Console", href: "/dashboard/doctor", icon: MonitorCheck },
     { name: "Consultation History", href: "/dashboard/doctor/history", icon: ClipboardList },
-    { name: "Leave Requests", href: "/dashboard/doctor/leave", icon: CalendarOff },
   ],
   admin: [
     { name: "Analytics", href: "/dashboard/admin", icon: PieChart },
     { name: "Appointments", href: "/dashboard/admin/appointments", icon: CalendarDays, badgeKey: "appointments" },
     { name: "User Management", href: "/dashboard/admin/users", icon: Users, badgeKey: "users" },
     { name: "Service Management", href: "/dashboard/admin/services", icon: Stethoscope },
-    { name: "Leave Requests", href: "/dashboard/admin/leaves", icon: CalendarOff, badgeKey: "leaves" },
+    { name: "Doctor Leaves", href: "/dashboard/admin/leaves", icon: CalendarX },
     { name: "Audit Logs", href: "/dashboard/admin/audit-logs", icon: ClipboardList },
     { name: "Settings", href: "/dashboard/settings", icon: Settings },
   ]
@@ -75,7 +74,7 @@ const navItems: Record<NonNullable<Role>, NavItem[]> = {
 
 export function Sidebar({ role, onNavigate }: { role: Role; onNavigate?: () => void }) {
   const pathname = usePathname();
-  const [counts, setCounts] = useState({ appointments: 0, leaves: 0, users: 0, total: 0 });
+  const [counts, setCounts] = useState({ appointments: 0, users: 0, total: 0 });
 
   useEffect(() => {
     const handleCounts = (e: Event) => {
@@ -83,7 +82,6 @@ export function Sidebar({ role, onNavigate }: { role: Role; onNavigate?: () => v
       if (customEvent.detail) {
         setCounts({
           appointments: customEvent.detail.appointments || 0,
-          leaves: customEvent.detail.leaves || 0,
           users: customEvent.detail.users || 0,
           total: customEvent.detail.total ?? customEvent.detail.count ?? 0,
         });

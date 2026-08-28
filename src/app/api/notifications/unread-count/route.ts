@@ -23,27 +23,13 @@ export async function GET() {
     let counts = {
       total: unreadCount,
       appointments: 0,
-      leaves: 0,
       users: 0,
     };
 
     // If Admin, they need to see pending actionables
     if (session.role === "ADMIN") {
-      const pendingLeaves = await prisma.doctorLeave.count({ where: { status: "PENDING" } });
       counts.appointments = 0; // Appointments don't require approval in this system
-      counts.leaves = pendingLeaves;
       counts.users = 0; // Users don't have an isVerified status in this system
-    } 
-    // If Doctor, maybe they see their own pending leaves (optional, usually admin does)
-    else if (session.role === "DOCTOR") {
-      const pendingLeaves = await prisma.doctorLeave.count({ 
-        where: { doctorId: userId, status: "PENDING" } 
-      });
-      counts.leaves = pendingLeaves;
-    }
-    // If Staff, they can see pending appointments
-    else if (session.role === "STAFF") {
-      counts.appointments = 0; // Appointments don't require approval in this system
     }
 
     return NextResponse.json(counts);

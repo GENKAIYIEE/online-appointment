@@ -38,7 +38,7 @@ export type DaySummary = {
   booked: number;
   disabled: number;
   total: number;
-  isLeave?: boolean;
+  isDoctorOnLeave?: boolean;
 };
 
 export async function getMonthlySlotSummary(
@@ -81,6 +81,15 @@ export async function getMonthlySlotSummary(
       include: { schedule: { select: { date: true } } },
     });
 
+    // Fetch doctor leaves that overlap with the month
+    const doctorLeaves = service.assigned_doctor_id ? await prisma.doctorLeave.findMany({
+      where: {
+        doctorId: service.assigned_doctor_id,
+        startDate: { lte: endDate },
+        endDate: { gte: startDate }
+      }
+    }) : [];
+
     // Helper to get local date string YYYY-MM-DD
     const getLocalDateString = (d: Date) => {
       const y = d.getFullYear();
@@ -89,30 +98,7 @@ export async function getMonthlySlotSummary(
       return `${y}-${m}-${day}`;
     };
 
-    // Fetch approved leaves to check for "Doctor on Leave" status
-    const leaveDateSet = new Set<string>();
-    if (service.assigned_doctor_id) {
-      const approvedLeaves = await prisma.doctorLeave.findMany({
-        where: {
-          doctorId: service.assigned_doctor_id,
-          status: "APPROVED",
-          startDate: { lte: endDate },
-          endDate: { gte: startDate },
-        }
-      });
 
-      for (const leave of approvedLeaves) {
-        let curr = new Date(leave.startDate);
-        const end = new Date(leave.endDate);
-        while (curr <= end) {
-          const y = curr.getUTCFullYear();
-          const m = String(curr.getUTCMonth() + 1).padStart(2, '0');
-          const d = String(curr.getUTCDate()).padStart(2, '0');
-          leaveDateSet.add(`${y}-${m}-${d}`);
-          curr.setUTCDate(curr.getUTCDate() + 1);
-        }
-      }
-    }
 
     // Group counts by date
     const disabledCountByDate: Record<string, number> = {};
@@ -135,9 +121,9 @@ export async function getMonthlySlotSummary(
     
     for (let day = 1; day <= daysInMonth; day++) {
       const iterDate = new Date(year, month, day);
-      // Skip weekends/Friday if we consider them closed
+      // Skip weekends if we consider them closed
       const dayOfWeek = iterDate.getDay();
-      if (dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6) {
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
         continue; // Closed days
       }
 
@@ -159,9 +145,20 @@ export async function getMonthlySlotSummary(
       }
 
       const dStr = getLocalDateString(iterDate);
-      const disabled = disabledCountByDate[dStr] || 0;
-      const booked = bookedCountByDate[dStr] || 0;
+      const isDoctorOnLeave = doctorLeaves.some(l => {
+        // Strip time from leave dates to compare purely by date
+        const start = new Date(l.startDate);
+        start.setUTCHours(0,0,0,0);
+        const end = new Date(l.endDate);
+        end.setUTCHours(23,59,59,999);
+        const current = new Date(`${dStr}T12:00:00Z`); // use noon to avoid timezone shift
+        return current >= start && current <= end;
+      });
+      
       const totalSlots = isUltrasound ? config.ultrasoundSlots.length : config.allSlots.length;
+      
+      let disabled = isDoctorOnLeave ? totalSlots : (disabledCountByDate[dStr] || 0);
+      const booked = isDoctorOnLeave ? 0 : (bookedCountByDate[dStr] || 0);
       
       let passedCount = 0;
       const now = new Date();
@@ -171,7 +168,7 @@ export async function getMonthlySlotSummary(
       const todayDate = String(phtNow.getUTCDate()).padStart(2, '0');
       const todayStr = `${todayYear}-${todayMonth}-${todayDate}`;
 
-      if (dStr === todayStr) {
+      if (!isDoctorOnLeave && dStr === todayStr) {
         const slotsList = isUltrasound ? config.ultrasoundSlots : config.allSlots;
         
         const dayDisabledSet = new Set(
@@ -193,8 +190,7 @@ export async function getMonthlySlotSummary(
         }).length;
       }
 
-      const available = Math.max(0, totalSlots - disabled - booked - passedCount);
-      const isLeave = leaveDateSet.has(dStr);
+      const available = isDoctorOnLeave ? 0 : Math.max(0, totalSlots - disabled - booked - passedCount);
 
       summary.push({
         date: dStr,
@@ -202,7 +198,7 @@ export async function getMonthlySlotSummary(
         booked,
         disabled,
         total: totalSlots,
-        isLeave,
+        isDoctorOnLeave,
       });
     }
 
@@ -230,6 +226,19 @@ export async function getDaySlotDetail(
     if (!service) return [];
     
     const config = await getClinicConfig();
+
+    // Check doctor leave
+    let isDoctorOnLeave = false;
+    if (service.assigned_doctor_id) {
+      const leave = await prisma.doctorLeave.findFirst({
+        where: {
+          doctorId: service.assigned_doctor_id,
+          startDate: { lte: date },
+          endDate: { gte: date }
+        }
+      });
+      if (leave) isDoctorOnLeave = true;
+    }
 
     // Fetch disabled slots for the day
     const disabledSlots = await prisma.disabledSlot.findMany({
@@ -270,7 +279,7 @@ export async function getDaySlotDetail(
       if (bookedMap.has(time_slot)) {
         return { time_slot, status: "Booked", patientName: bookedMap.get(time_slot) };
       }
-      if (disabledSet.has(time_slot)) {
+      if (isDoctorOnLeave || disabledSet.has(time_slot)) {
         return { time_slot, status: "Disabled" };
       }
       return { time_slot, status: "Available" };

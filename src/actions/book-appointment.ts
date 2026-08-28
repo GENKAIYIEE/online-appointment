@@ -19,30 +19,6 @@ export async function checkServiceAvailability(serviceName: string) {
   return !!doctor;
 }
 
-export async function getUpcomingLeavesForService(serviceName: string) {
-  try {
-    const doctor = await getDoctorForService(serviceName);
-    if (!doctor) return [];
-
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-
-    const leaves = await prisma.doctorLeave.findMany({
-      where: {
-        doctorId: doctor.id,
-        status: "APPROVED",
-        endDate: { gte: today },
-      },
-      orderBy: { startDate: "asc" },
-    });
-
-    return leaves;
-  } catch (error) {
-    console.error("Error fetching upcoming leaves:", error);
-    return [];
-  }
-}
-
 /**
  * Returns the list of ALREADY BOOKED time slot strings for the given date + service.
  * The frontend generates the full 18 slots dynamically and uses this list to mark
@@ -51,15 +27,32 @@ export async function getUpcomingLeavesForService(serviceName: string) {
 export async function getBookedSlots(
   dateString: string,
   serviceName: string
-): Promise<{ bookedSlots: string[]; isLeave?: boolean; error?: string }> {
+): Promise<{ bookedSlots: string[]; error?: string }> {
   try {
     // Prisma @db.Date columns expect UTC midnight (T00:00:00.000Z).
     // Using T12:00:00Z will fail the unique constraint lookup because it doesn't match the DB exact timestamp!
     const date = new Date(`${dateString}T00:00:00Z`);
 
-    const service = await prisma.service.findUnique({ where: { name: serviceName } });
+    const service = await prisma.service.findUnique({ 
+      where: { name: serviceName },
+      include: { assignedDoctor: true }
+    });
     if (!service) {
       return { bookedSlots: [] };
+    }
+
+    // Check if the doctor is on leave for this date
+    if (service.assigned_doctor_id) {
+      const leave = await prisma.doctorLeave.findFirst({
+        where: {
+          doctorId: service.assigned_doctor_id,
+          startDate: { lte: date },
+          endDate: { gte: date },
+        }
+      });
+      if (leave) {
+        return { bookedSlots: [], error: "Doctor is on leave" };
+      }
     }
 
     // Find the schedule record for this date (only exists if someone booked before)
@@ -91,22 +84,7 @@ export async function getBookedSlots(
 
     const bookedSlots = [...new Set([...appointmentSlots, ...disabledSlotStrings])];
 
-    let isLeave = false;
-    if (service.assigned_doctor_id) {
-      const leave = await prisma.doctorLeave.findFirst({
-        where: {
-          doctorId: service.assigned_doctor_id,
-          status: "APPROVED",
-          startDate: { lte: date },
-          endDate: { gte: date },
-        }
-      });
-      if (leave) {
-        isLeave = true;
-      }
-    }
-
-    return { bookedSlots, isLeave };
+    return { bookedSlots };
   } catch (error) {
     console.error("Error fetching booked slots:", error);
     return {

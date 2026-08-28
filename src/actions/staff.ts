@@ -15,6 +15,123 @@ export async function getDoctorForServiceById(serviceId: string) {
   return service?.assignedDoctor || null;
 }
 
+export type PatientSearchResult = {
+  id: string;
+  type: "PATIENT" | "SUB_PROFILE";
+  displayName: string;
+  /** YYYY-MM-DD — ready to bind to <input type="date"> */
+  birthday: string | null;
+  sex: string | null;
+  contactNumber: string | null;
+  address: string | null;
+  /** Helpful subtitle shown in the dropdown */
+  subtitle: string;
+};
+
+/**
+ * Searches registered online patients (and their family sub-profiles) by name.
+ * Only returns users that have an email (i.e., proper online registrations — not
+ * the anonymous placeholder User records created for walk-ins).
+ * Called from the walk-in form so staff can auto-fill details without re-encoding.
+ */
+export async function searchRegisteredPatients(
+  query: string
+): Promise<PatientSearchResult[]> {
+  try {
+    const session = await verifySession();
+    if (!session || (session.role !== "STAFF" && session.role !== "ADMIN")) {
+      return [];
+    }
+
+    const trimmed = query.trim();
+    if (trimmed.length < 2) return [];
+
+    const [users, subProfiles] = await Promise.all([
+      // Search main patient accounts (must have email → real online registration)
+      prisma.user.findMany({
+        where: {
+          role: "PATIENT",
+          email: { not: null },
+          name: { contains: trimmed, mode: "insensitive" },
+        },
+        select: {
+          id: true,
+          name: true,
+          birthday: true,
+          gender: true,
+          phone: true,
+          address: true,
+        },
+        take: 8,
+        orderBy: { name: "asc" },
+      }),
+
+      // Also search family sub-profiles so staff can quickly find dependents
+      prisma.subProfile.findMany({
+        where: {
+          OR: [
+            { firstName: { contains: trimmed, mode: "insensitive" } },
+            { lastName: { contains: trimmed, mode: "insensitive" } },
+          ],
+          owner: { email: { not: null } },
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          middleName: true,
+          birthday: true,
+          gender: true,
+          relationship: true,
+          owner: { select: { name: true, phone: true, address: true } },
+        },
+        take: 5,
+        orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+      }),
+    ]);
+
+    const formatDate = (d: Date | null | undefined): string | null => {
+      if (!d) return null;
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(d.getUTCDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    };
+
+    const userResults: PatientSearchResult[] = users.map((u) => ({
+      id: u.id,
+      type: "PATIENT",
+      displayName: u.name,
+      birthday: formatDate(u.birthday),
+      sex: u.gender ?? null,
+      contactNumber: u.phone ?? null,
+      address: u.address ?? null,
+      subtitle: [u.gender, u.birthday ? `b. ${formatDate(u.birthday)}` : null]
+        .filter(Boolean)
+        .join(" · ") || "Registered Patient",
+    }));
+
+    const subResults: PatientSearchResult[] = subProfiles.map((sp) => ({
+      id: sp.id,
+      type: "SUB_PROFILE",
+      displayName: [sp.firstName, sp.middleName, sp.lastName].filter(Boolean).join(" "),
+      birthday: formatDate(sp.birthday ?? null),
+      sex: sp.gender ?? null,
+      // Sub-profiles inherit contact/address from the owner account
+      contactNumber: sp.owner?.phone ?? null,
+      address: sp.owner?.address ?? null,
+      subtitle: `${sp.relationship} of ${sp.owner?.name ?? "patient"}`,
+    }));
+
+    // Merge, deduplicate by name+birthday, max 10 results
+    const combined = [...userResults, ...subResults].slice(0, 10);
+    return combined;
+  } catch (error) {
+    console.error("Error searching registered patients:", error);
+    return [];
+  }
+}
+
 export async function getStaffSummaryCards() {
   try {
     const today = getTodayPHT();
@@ -325,7 +442,7 @@ export async function registerWalkIn(data: {
         throw new Error("This time slot is already booked. Please select another slot.");
       }
 
-      // Check if the slot has been disabled by staff or by an approved doctor leave
+      // Check if the slot has been manually disabled by staff
       const disabledSlot = await tx.disabledSlot.findFirst({
         where: {
           date: schedule.date,
@@ -335,7 +452,7 @@ export async function registerWalkIn(data: {
       });
 
       if (disabledSlot) {
-        throw new Error("This time slot has been disabled or the doctor is on leave. Please select another slot.");
+        throw new Error("This time slot has been disabled. Please select another slot.");
       }
 
       const appt = await tx.appointment.create({
