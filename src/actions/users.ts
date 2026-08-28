@@ -253,13 +253,6 @@ export async function updateStaffOrDoctor(
     }
 
     if (user.role === 'DOCTOR' && data.role === 'STAFF') {
-      const pendingLeaves = await tx.doctorLeave.count({
-        where: { doctorId: id, status: 'PENDING' }
-      });
-      if (pendingLeaves > 0) {
-        throw new Error(`Cannot change role to STAFF: This doctor has ${pendingLeaves} pending leave request(s). Please resolve them first.`);
-      }
-
       if (user.assignedService) {
         // Appointments are tied to the schedule. We check appointments linked to this service that are CONFIRMED and >= today
         // But the simplest way is to check if there are CONFIRMED appointments where doctor_name == user.name or service == user.assignedService.name

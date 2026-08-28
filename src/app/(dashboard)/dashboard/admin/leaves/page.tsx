@@ -1,21 +1,23 @@
-import { redirect } from "next/navigation";
 import { verifySession } from "@/lib/session";
-import { getPaginatedLeaveRequests, getLeaveRequestsCounts } from "@/actions/leave";
-import { LeavesClient } from "./LeavesClient";
+import { redirect } from "next/navigation";
+import { getDoctorsForLeave, getDoctorLeaves } from "@/actions/admin-leaves";
+import AdminLeavesClient from "./AdminLeavesClient";
 
-export const metadata = {
-  title: "Leave Requests | Admin Portal",
-  description: "Review and approve doctor leave requests.",
-};
+export const dynamic = "force-dynamic";
 
 export default async function AdminLeavesPage() {
   const session = await verifySession();
+  
   if (!session || session.role !== "ADMIN") {
     redirect("/login");
   }
 
-  const counts = await getLeaveRequestsCounts();
-  const initialData = await getPaginatedLeaveRequests("pending", 1, 10);
+  const doctors = await getDoctorsForLeave();
+  const initialLeaves = await getDoctorLeaves();
 
-  return <LeavesClient initialLeaves={initialData.leaves} initialTotalPages={initialData.totalPages} initialCounts={counts} />;
+  return (
+    <main className="flex-1 bg-slate-50 min-h-screen">
+      <AdminLeavesClient initialLeaves={initialLeaves} doctors={doctors} />
+    </main>
+  );
 }

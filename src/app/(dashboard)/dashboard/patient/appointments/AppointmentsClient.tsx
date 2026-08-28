@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import Link from "next/link";
-import { format, isBefore, startOfDay, isSunday, isFriday, isSaturday } from "date-fns";
+import { format, isBefore, startOfDay, isSunday, isSaturday } from "date-fns";
 import { formatDatePHT, getTodayPHT } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -582,7 +582,6 @@ export default function AppointmentsClient({
                       onSelect={setRescheduleDate}
                       disabled={(date) =>
                         isBefore(date, startOfDay(new Date())) ||
-                        isFriday(date) ||
                         isSaturday(date) ||
                         isSunday(date)
                       }
@@ -595,7 +594,7 @@ export default function AppointmentsClient({
                   </div>
                   <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" />
-                    Clinic is open Monday to Thursday only.
+                    Clinic is open Monday to Friday only.
                   </p>
                 </div>
 

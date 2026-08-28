@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { format, differenceInYears, isBefore, startOfDay } from "date-fns";
-import { Users, User, CheckCircle2, Printer, X, AlertTriangle, Info, CalendarClock, CalendarIcon } from "lucide-react";
-import { registerWalkIn, getStaffSummaryCards, getTodayAppointments, getAwaitingVitalsAppointments, getUpcomingAppointments, staffCancelAppointment, staffRescheduleAppointment, staffRecordVitals, type UpcomingAppointment } from "@/actions/staff";
-import { getBookedSlots, getUpcomingLeavesForService } from "@/actions/book-appointment";
+import { Users, User, CheckCircle2, Printer, X, AlertTriangle, Info, CalendarClock, CalendarIcon, Search } from "lucide-react";
+import { registerWalkIn, searchRegisteredPatients, getStaffSummaryCards, getTodayAppointments, getAwaitingVitalsAppointments, getUpcomingAppointments, staffCancelAppointment, staffRescheduleAppointment, staffRecordVitals, type UpcomingAppointment, type PatientSearchResult } from "@/actions/staff";
+import { getBookedSlots } from "@/actions/book-appointment";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,7 +53,7 @@ type SlipData = {
 // Helper to validate date selection for <input type="date">
 // Note: <input type="date"> returns YYYY-MM-DD strings. We parse them as local dates
 // to check day-of-week, matching the user's intent (the calendar they see).
-function validateSelectedDate(dateString: string, serviceName?: string, leaveDateObjects?: Date[]): { isValid: boolean; error?: string } {
+function validateSelectedDate(dateString: string, serviceName?: string): { isValid: boolean; error?: string } {
   // Parse YYYY-MM-DD as local date (matching what the calendar picker shows the user)
   const [year, month, day] = dateString.split('-').map(Number);
   const date = new Date(year, month - 1, day);
@@ -64,9 +64,9 @@ function validateSelectedDate(dateString: string, serviceName?: string, leaveDat
       return { isValid: false, error: "Ultrasound is exclusively available on Thursdays." };
     }
   } else {
-    // Disable Friday, Saturday, Sunday
-    if (dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6) {
-      return { isValid: false, error: "Clinic is open Monday to Thursday only." };
+    // Disable Saturday, Sunday
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      return { isValid: false, error: "Clinic is open Monday to Friday only." };
     }
   }
 
@@ -90,18 +90,6 @@ function validateSelectedDate(dateString: string, serviceName?: string, leaveDat
       (now.getHours() === 16 && now.getMinutes() >= 30);
     if (isPastCutoff) {
       return { isValid: false, error: "It is past 4:30 PM. No more slots available today." };
-    }
-  }
-
-  // Check against leaves
-  if (leaveDateObjects && leaveDateObjects.length > 0) {
-    const isLeave = leaveDateObjects.some(d =>
-      d.getFullYear() === date.getFullYear() &&
-      d.getMonth() === date.getMonth() &&
-      d.getDate() === date.getDate()
-    );
-    if (isLeave) {
-      return { isValid: false, error: "The doctor is on leave on this date." };
     }
   }
 
@@ -182,6 +170,13 @@ export function StaffDeskClient({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
+  // Patient record lookup (autofill)
+  const [patientQuery, setPatientQuery] = useState("");
+  const [patientResults, setPatientResults] = useState<PatientSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
   // Manage modal state
   // We use `any` or a union type here because it can be an UpcomingAppointment or a TodayAppointment
   const [manageTarget, setManageTarget] = useState<any | null>(null);
@@ -207,69 +202,8 @@ export function StaffDeskClient({
   const [trSubmitting, setTrSubmitting] = useState(false);
   const [trErrors, setTrErrors] = useState<Record<string, string>>({});
 
+
   const selectedService = services.find((s) => s.id === serviceId);
-
-  // Leaves state
-  const [upcomingLeaves, setUpcomingLeaves] = useState<any[]>([]);
-  const [mgUpcomingLeaves, setMgUpcomingLeaves] = useState<any[]>([]);
-
-  useEffect(() => {
-    async function fetchLeaves() {
-      if (!serviceId) {
-        setUpcomingLeaves([]);
-        return;
-      }
-      const serviceName = services.find((s) => s.id === serviceId)?.name;
-      if (!serviceName) return;
-      try {
-        const leaves = await getUpcomingLeavesForService(serviceName);
-        setUpcomingLeaves(leaves);
-      } catch {
-        console.error("Failed to fetch leaves");
-      }
-    }
-    fetchLeaves();
-  }, [serviceId, services]);
-
-  useEffect(() => {
-    async function fetchMgLeaves() {
-      if (!mgServiceId) {
-        setMgUpcomingLeaves([]);
-        return;
-      }
-      const serviceName = services.find((s) => s.id === mgServiceId)?.name;
-      if (!serviceName) return;
-      try {
-        const leaves = await getUpcomingLeavesForService(serviceName);
-        setMgUpcomingLeaves(leaves);
-      } catch {
-        console.error("Failed to fetch leaves");
-      }
-    }
-    fetchMgLeaves();
-  }, [mgServiceId, services]);
-
-  // Process leave dates for Validation & Calendar (Walk-in Form)
-  const leaveDateObjects: Date[] = [];
-  upcomingLeaves.forEach(leave => {
-    let curr = new Date(leave.startDate);
-    const end = new Date(leave.endDate);
-    while (curr <= end) {
-      leaveDateObjects.push(new Date(curr.getUTCFullYear(), curr.getUTCMonth(), curr.getUTCDate()));
-      curr.setUTCDate(curr.getUTCDate() + 1);
-    }
-  });
-
-  // Process leave dates for Validation & Calendar (Reschedule Form)
-  const mgLeaveDateObjects: Date[] = [];
-  mgUpcomingLeaves.forEach(leave => {
-    let curr = new Date(leave.startDate);
-    const end = new Date(leave.endDate);
-    while (curr <= end) {
-      mgLeaveDateObjects.push(new Date(curr.getUTCFullYear(), curr.getUTCMonth(), curr.getUTCDate()));
-      curr.setUTCDate(curr.getUTCDate() + 1);
-    }
-  });
 
   // Auto-calculate age from birthday
   useEffect(() => {
@@ -280,6 +214,55 @@ export function StaffDeskClient({
       setAge("");
     }
   }, [birthday]);
+
+  // Debounced patient search (500ms) — fires when staff types in the lookup bar
+  useEffect(() => {
+    if (patientQuery.trim().length < 2) {
+      setPatientResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const results = await searchRegisteredPatients(patientQuery);
+        setPatientResults(results);
+        setShowDropdown(results.length > 0);
+      } catch {
+        setPatientResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [patientQuery]);
+
+  // Close dropdown when clicking outside the search container
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Autofill the walk-in form from a selected patient record
+  const handleSelectPatient = (p: PatientSearchResult) => {
+    setFullName(p.displayName);
+    if (p.birthday) setBirthday(p.birthday);
+    if (p.sex) setSex(p.sex);
+    if (p.contactNumber) setContactNumber(p.contactNumber);
+    if (p.address) setAddress(p.address);
+    setPatientQuery("");
+    setPatientResults([]);
+    setShowDropdown(false);
+    setErrors({});
+    toast.success(`Record loaded for ${p.displayName}`, {
+      description: "Review and confirm the details before submitting.",
+    });
+  };
 
   // Fetch booked slots from DB
   const fetchBookedSlots = useCallback(async (d: string, sid: string) => {
@@ -493,6 +476,7 @@ export function StaffDeskClient({
     setContactNumber(""); setAddress(""); setServiceId("");
     setDate(""); setTimeSlot(""); setBookedSlots([]);
     setErrors({});
+    setPatientQuery(""); setPatientResults([]); setShowDropdown(false);
   };
 
   const validate = () => {
@@ -728,6 +712,76 @@ export function StaffDeskClient({
             </div>
             <form onSubmit={handleOpenConfirm} className="p-4 space-y-4">
 
+              {/* PATIENT RECORD LOOKUP */}
+              <div ref={searchContainerRef} className="relative">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-1.5 mb-1">
+                  <Search className="w-3.5 h-3.5 text-emerald-600" />
+                  Search Existing Patient Record
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={patientQuery}
+                    onChange={(e) => setPatientQuery(e.target.value)}
+                    onFocus={() => { if (patientResults.length > 0) setShowDropdown(true); }}
+                    className="w-full px-3 py-2 pl-9 border border-slate-200 rounded-md text-sm outline-none transition-all focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-emerald-50/40 placeholder:text-slate-400"
+                    placeholder="Type name to search registered patients..."
+                    autoComplete="off"
+                  />
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  {isSearching && (
+                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                      <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Results Dropdown */}
+                {showDropdown && patientResults.length > 0 && (
+                  <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden">
+                    <div className="px-3 py-1.5 bg-emerald-50 border-b border-slate-100">
+                      <p className="text-[10px] font-semibold text-emerald-700 uppercase tracking-wide">
+                        {patientResults.length} record{patientResults.length !== 1 ? "s" : ""} found — click to autofill
+                      </p>
+                    </div>
+                    <ul className="max-h-52 overflow-y-auto divide-y divide-slate-50">
+                      {patientResults.map((p) => (
+                        <li key={`${p.type}-${p.id}`}>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectPatient(p)}
+                            className="w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition-colors flex items-start gap-2.5 group"
+                          >
+                            <div className="w-7 h-7 rounded-full bg-slate-100 group-hover:bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5 transition-colors">
+                              <User className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-600 transition-colors" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-800 truncate">{p.displayName}</p>
+                              <p className="text-xs text-slate-500 truncate">{p.subtitle}</p>
+                              {p.type === "SUB_PROFILE" && (
+                                <span className="inline-block text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-100 rounded px-1.5 py-0.5 mt-0.5">Family Member</span>
+                              )}
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* No results hint */}
+                {patientQuery.trim().length >= 2 && !isSearching && patientResults.length === 0 && (
+                  <p className="text-xs text-slate-400 mt-1 pl-1">No registered patients found. Fill in manually below.</p>
+                )}
+              </div>
+
+              {/* Divider */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-px bg-slate-100" />
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">or fill in manually</span>
+                <div className="flex-1 h-px bg-slate-100" />
+              </div>
+
               {/* Full Name */}
               <div className="space-y-1">
                 <label className="text-sm font-medium text-slate-700">Full Name <span className="text-red-500">*</span></label>
@@ -839,7 +893,7 @@ export function StaffDeskClient({
                           return;
                         }
                         const dateStr = format(d, "yyyy-MM-dd");
-                        const validation = validateSelectedDate(dateStr, selectedService?.name, leaveDateObjects);
+                        const validation = validateSelectedDate(dateStr, selectedService?.name);
                         if (!validation.isValid) {
                           toast.error(validation.error);
                           return;
@@ -851,24 +905,12 @@ export function StaffDeskClient({
                         const day = d.getDay();
                         const isPast = startOfDay(d) < startOfDay(new Date());
                         if (isPast) return true;
-                        
-                        const isLeave = leaveDateObjects.some(ld => 
-                          ld.getFullYear() === d.getFullYear() &&
-                          ld.getMonth() === d.getMonth() &&
-                          ld.getDate() === d.getDate()
-                        );
-                        if (isLeave) return true;
 
                         if (selectedService?.name === "Ultrasound") {
                           return day !== 4; // Only Thursday
+                        } else {
+                          return day === 0 || day === 6; // Closed on weekends
                         }
-                        return day === 0 || day === 5 || day === 6; // Mon-Thu only
-                      }}
-                      modifiers={{
-                        leave: leaveDateObjects
-                      }}
-                      modifiersClassNames={{
-                        leave: "text-amber-500 bg-amber-50 font-bold line-through opacity-80"
                       }}
                     />
                   </PopoverContent>
@@ -878,23 +920,8 @@ export function StaffDeskClient({
                 {/* Information Alerts */}
                 <div className="mt-2 flex flex-col gap-1.5">
                   <p className="text-[11px] text-slate-500 flex items-start gap-1">
-                    <Info className="w-3.5 h-3.5 shrink-0" /> Clinic is open Monday to Thursday, 8:00 AM to 5:00 PM only.
+                    <Info className="w-3.5 h-3.5 shrink-0" /> Clinic is open Monday to Friday, 8:00 AM to 5:00 PM only.
                   </p>
-                  {upcomingLeaves.map((leave, idx) => {
-                    const startStr = format(new Date(leave.startDate), "MMM d");
-                    const endStr = format(new Date(leave.endDate), "MMM d");
-                    const returnDate = new Date(leave.endDate);
-                    returnDate.setUTCDate(returnDate.getUTCDate() + 1);
-                    const returnStr = format(returnDate, "MMM d");
-                    return (
-                      <div key={idx} className="flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded p-2">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
-                        <span>
-                          <strong>Doctor on Leave:</strong> {startStr} to {endStr}. Returns on <strong>{returnStr}</strong>.
-                        </span>
-                      </div>
-                    );
-                  })}
                 </div>
               </div>
 
@@ -1393,7 +1420,7 @@ export function StaffDeskClient({
                       onChange={(e) => {
                         const val = e.target.value;
                         if (!val) { setMgDate(""); setMgTimeSlot(""); setMgBookedSlots([]); return; }
-                        const validation = validateSelectedDate(val, mgSelectedService?.name, mgLeaveDateObjects);
+                        const validation = validateSelectedDate(val, mgSelectedService?.name);
                         if (!validation.isValid) { toast.error(validation.error); return; }
                         setMgDate(val);
                         fetchMgSlots(val, mgServiceId);
@@ -1401,27 +1428,6 @@ export function StaffDeskClient({
                       className="w-full px-3 py-2 border border-slate-200 rounded-md text-sm outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 disabled:opacity-50"
                     />
                   </div>
-
-                  {/* Leave Alerts for Reschedule */}
-                  {mgUpcomingLeaves.length > 0 && (
-                    <div className="flex flex-col gap-1.5">
-                      {mgUpcomingLeaves.map((leave, idx) => {
-                        const startStr = format(new Date(leave.startDate), "MMM d");
-                        const endStr = format(new Date(leave.endDate), "MMM d");
-                        const returnDate = new Date(leave.endDate);
-                        returnDate.setUTCDate(returnDate.getUTCDate() + 1);
-                        const returnStr = format(returnDate, "MMM d");
-                        return (
-                          <div key={idx} className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2.5">
-                            <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-                            <span>
-                              <strong>Doctor on Leave:</strong> {startStr} to {endStr}.<br/>Returns on <strong>{returnStr}</strong>.
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
 
                   {/* Time Slot */}
                   {mgDate && mgServiceId && (

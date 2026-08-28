@@ -13,3 +13,9 @@ For every task, always act as:
 5. A SYSTEMS & SECURITY AUDITOR (proactively hunting for deep architectural flaws, extreme edge cases, memory leaks, and security vulnerabilities that could potentially crash or ruin the system before they even happen)
 Do not wait for the user to remind you of these roles.
 <!-- END:agent-roles-rule -->
+
+<!-- BEGIN:production-guarantee-rule -->
+# Production Guarantee
+Whenever making revisions or changes, you MUST guarantee that the code will work on the production site, not just locally.
+Always consider production environments (e.g. building, static generation, connection pooling, environment variables, caching) before finalizing changes.
+<!-- END:production-guarantee-rule -->
