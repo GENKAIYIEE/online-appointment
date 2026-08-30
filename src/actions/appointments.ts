@@ -210,7 +210,7 @@ export async function cancelAppointment(
       return { success: false, error: "Not authenticated" };
     }
 
-    await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const appointment = await tx.appointment.findUnique({
         where: { id: appointmentId, user_id: patientId },
         include: { schedule: true },
@@ -252,22 +252,30 @@ export async function cancelAppointment(
         },
       });
 
-      // Notify Doctor
+      // Get doctor ID for notification
+      let doctorIdForNotification: string | undefined;
       if (appointment.service) {
         const service = await tx.service.findUnique({
           where: { name: appointment.service },
           include: { assignedDoctor: true }
         });
         if (service?.assignedDoctor) {
-          const { createDoctorNotification } = await import("@/lib/notifications");
-          await createDoctorNotification(
-            `An appointment for your service on ${formatDatePHT(appointment.schedule.date, "MMM d, yyyy")} was cancelled by the patient.`,
-            service.assignedDoctor.id,
-            appointment.id
-          );
+          doctorIdForNotification = service.assignedDoctor.id;
         }
       }
+
+      return { appointment, doctorIdForNotification };
     });
+
+    // Notify Doctor (Outside transaction to prevent timeouts)
+    if (result.doctorIdForNotification) {
+      const { createDoctorNotification } = await import("@/lib/notifications");
+      await createDoctorNotification(
+        `An appointment for your service on ${formatDatePHT(result.appointment.schedule.date, "MMM d, yyyy")} was cancelled by the patient.`,
+        result.doctorIdForNotification,
+        result.appointment.id
+      );
+    }
 
     revalidatePath("/dashboard/patient/appointments");
     revalidatePath("/dashboard/patient");
