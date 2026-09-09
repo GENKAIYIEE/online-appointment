@@ -192,6 +192,9 @@ export async function deleteService(serviceId: string) {
     return { success: true };
   } catch (error: any) {
     console.error("Failed to delete service:", error);
-    return { success: false, error: "Failed to delete service." };
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Failed to delete service." 
+    };
   }
 }

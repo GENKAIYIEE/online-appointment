@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifySession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { getTodayPHT } from "@/lib/utils";
 
 export async function GET() {
   try {
@@ -18,7 +19,27 @@ export async function GET() {
       orderBy: { created_at: "desc" }
     });
     
-    return NextResponse.json(services);
+    const today = getTodayPHT();
+
+    // Map through and count upcoming appointments
+    const servicesWithCounts = await Promise.all(
+      services.map(async (service) => {
+        const upcomingCount = await prisma.appointment.count({
+          where: {
+            service: service.name,
+            status: "CONFIRMED",
+            schedule: { date: { gte: today } }
+          }
+        });
+
+        return {
+          ...service,
+          upcomingAppointmentsCount: upcomingCount
+        };
+      })
+    );
+    
+    return NextResponse.json(servicesWithCounts);
   } catch (error) {
     console.error("[admin/services] GET error:", error);
     return NextResponse.json({ error: "Failed to fetch services" }, { status: 500 });
