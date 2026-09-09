@@ -63,6 +63,7 @@ interface UserRecord {
   phone: string | null;
   role: "STAFF" | "DOCTOR";
   assignedService: Service | null;
+  upcomingAppointmentsCount?: number;
   created_at: string;
 }
 
@@ -596,8 +597,15 @@ export function UserManagement() {
                   {users.map((user) => (
                     <TableRow key={user.id} className="hover:bg-slate-50/60 transition-colors">
                       <TableCell className="font-semibold">
-                        {user.name}
-                        <div className="text-xs text-slate-400 font-normal">{user.email}</div>
+                        <div className="flex flex-col">
+                          <span>{user.name}</span>
+                          <span className="text-xs text-slate-400 font-normal">{user.email}</span>
+                          {!!user.upcomingAppointmentsCount && (
+                            <span className="text-xs text-slate-500 font-normal mt-0.5">
+                              Upcoming
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>{roleBadge(user.role)}</TableCell>
                       <TableCell>
@@ -618,8 +626,14 @@ export function UserManagement() {
                           <Button variant="ghost" size="icon" onClick={() => openEditModal(user)}>
                             <Pencil className="w-4 h-4 text-slate-500" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => setDeleteUser(user)}>
-                            <Trash2 className="w-4 h-4 text-red-500" />
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            disabled={!!user.upcomingAppointmentsCount}
+                            title={user.upcomingAppointmentsCount ? "Cannot delete doctor with upcoming appointments" : "Delete User"}
+                            onClick={() => setDeleteUser(user)}
+                          >
+                            <Trash2 className={`w-4 h-4 ${user.upcomingAppointmentsCount ? "text-slate-300" : "text-red-500"}`} />
                           </Button>
                         </div>
                       </TableCell>

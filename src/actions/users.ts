@@ -31,8 +31,29 @@ export async function getStaffAndDoctors(page = 1, limit = 10, search = "") {
     take: limit,
   });
 
+  const today = getTodayPHT();
+
+  const usersWithCounts = await Promise.all(
+    users.map(async (user) => {
+      let upcomingCount = 0;
+      if (user.role === 'DOCTOR') {
+        upcomingCount = await prisma.appointment.count({
+          where: {
+            doctor_name: user.name,
+            status: "CONFIRMED",
+            schedule: { date: { gte: today } }
+          }
+        });
+      }
+      return {
+        ...user,
+        upcomingAppointmentsCount: upcomingCount
+      };
+    })
+  );
+
   return {
-    users,
+    users: usersWithCounts,
     totalCount,
     totalPages: Math.ceil(totalCount / limit)
   };

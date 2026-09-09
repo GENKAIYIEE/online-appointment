@@ -22,6 +22,7 @@ type Service = {
   name: string;
   doctor_name: string;
   created_at: string;
+  upcomingAppointmentsCount?: number;
   assignedDoctor?: {
     id: string;
     name: string;
@@ -250,7 +251,16 @@ export function ServiceManagement() {
                     <TableBody>
                       {services.map(service => (
                         <TableRow key={service.id}>
-                          <TableCell className="font-medium text-slate-900">{service.name}</TableCell>
+                          <TableCell className="font-medium text-slate-900">
+                            <div className="flex flex-col">
+                              <span>{service.name}</span>
+                              {!!service.upcomingAppointmentsCount && (
+                                <span className="text-xs text-slate-500 font-normal mt-0.5">
+                                  Upcoming
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell>
                             {service.assignedDoctor ? (
                               <div className="flex items-center gap-2">
@@ -278,7 +288,11 @@ export function ServiceManagement() {
                             <Button 
                               variant="ghost" 
                               size="sm" 
-                              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                              disabled={!!service.upcomingAppointmentsCount}
+                              className={service.upcomingAppointmentsCount 
+                                ? "text-slate-300 cursor-not-allowed" 
+                                : "text-red-600 hover:bg-red-50 hover:text-red-700"}
+                              title={service.upcomingAppointmentsCount ? "Cannot delete service with upcoming appointments" : "Delete Service"}
                               onClick={() => setDeleteServiceId(service.id)}
                             >
                               <Trash2 className="w-4 h-4" />
