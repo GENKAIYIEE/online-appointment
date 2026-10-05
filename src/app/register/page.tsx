@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useForm } from "react-hook-form";
@@ -11,7 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Stethoscope, ArrowRight, ArrowLeft, Eye, EyeOff } from "lucide-react";
+import { ArrowRight, ArrowLeft, Eye, EyeOff } from "lucide-react";
+import ReCAPTCHA from "react-google-recaptcha";
 
 const formSchema = z.object({
   firstName: z.string().min(2, "First name must be at least 2 characters"),
@@ -91,6 +92,8 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const recaptchaRef = useRef<ReCAPTCHA>(null);
 
   const {
     register,
@@ -144,12 +147,22 @@ export default function RegisterPage() {
       "terms",
     ];
     const isStep2Valid = await trigger(fieldsToValidate);
-    if (isStep2Valid) {
-      setStep(3);
+    if (!isStep2Valid) return;
+
+    if (!captchaToken) {
+      toast.error("Please complete the CAPTCHA verification.");
+      return;
     }
+
+    setStep(3);
   };
 
   const onSubmit = async (data: FormValues) => {
+    if (!captchaToken) {
+      toast.error("Please complete the CAPTCHA verification.");
+      return;
+    }
+
     setLoading(true);
     try {
       const { registerPatient } = await import("@/actions/auth");
@@ -164,6 +177,7 @@ export default function RegisterPage() {
       const res = await registerPatient({
         ...data,
         birthday: isoBirthday,
+        captchaToken,
       });
 
       if (res.success && res.redirect) {
@@ -171,10 +185,15 @@ export default function RegisterPage() {
         router.push(res.redirect);
       } else {
         toast.error(res.error || "Failed to register. Please try again.");
+        // Reset captcha on failure
+        recaptchaRef.current?.reset();
+        setCaptchaToken(null);
         setLoading(false);
       }
     } catch (error) {
       toast.error("An unexpected error occurred. Please try again later.");
+      recaptchaRef.current?.reset();
+      setCaptchaToken(null);
       setLoading(false);
     }
   };
@@ -411,6 +430,16 @@ export default function RegisterPage() {
                   </label>
                 </div>
                 {errors.terms && <p className="text-red-500 text-xs">{errors.terms.message}</p>}
+
+                {/* reCAPTCHA v2 */}
+                <div className="pt-2">
+                  <ReCAPTCHA
+                    ref={recaptchaRef}
+                    sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!}
+                    onChange={(token) => setCaptchaToken(token)}
+                    onExpired={() => setCaptchaToken(null)}
+                  />
+                </div>
 
                 <div className="flex justify-between pt-4">
                   <Button type="button" variant="outline" onClick={() => setStep(1)} className="gap-2">

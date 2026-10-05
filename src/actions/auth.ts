@@ -51,6 +51,33 @@ export async function loginUser(email: string, password: string) {
 
 export async function registerPatient(formData: any) {
   try {
+    // --- Server-side reCAPTCHA verification ---
+    const captchaToken = formData.captchaToken;
+    if (!captchaToken) {
+      return { success: false, error: 'CAPTCHA verification is required.' };
+    }
+
+    const recaptchaSecretKey = process.env.RECAPTCHA_SECRET_KEY;
+    if (!recaptchaSecretKey) {
+      console.error('RECAPTCHA_SECRET_KEY is not set in environment variables.');
+      return { success: false, error: 'Server configuration error. Please contact support.' };
+    }
+
+    const recaptchaVerifyRes = await fetch(
+      `https://www.google.com/recaptcha/api/siteverify`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `secret=${recaptchaSecretKey}&response=${captchaToken}`,
+      }
+    );
+    const recaptchaData = await recaptchaVerifyRes.json();
+
+    if (!recaptchaData.success) {
+      return { success: false, error: 'CAPTCHA verification failed. Please try again.' };
+    }
+    // ------------------------------------------
+
     const email = formData.email.toLowerCase();
     
     // Check if email already exists
