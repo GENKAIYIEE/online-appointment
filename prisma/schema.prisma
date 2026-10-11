@@ -60,6 +60,14 @@ model User {
   resetOtp       String?
   resetOtpExpiry DateTime?
 
+  // Government ID Verification (National ID, UMID, Passport, etc.)
+  idType            String?
+  idNumber          String?
+  idCardUrl         String?
+  idCardBackUrl     String?
+  idStatus          String?       @default("PENDING")
+  idRejectionReason String?
+
   isAvailable  Boolean       @default(true) // For DOCTOR role
   created_at   DateTime      @default(now())
 
@@ -354,6 +362,15 @@ model SubProfile {
   birthday     DateTime?     @db.Date
   gender       String?
   relationship String        // e.g. "Child", "Spouse", "Parent", "Sibling", "Other"
+  
+  // Government ID Verification
+  idType            String?
+  idNumber          String?
+  idCardUrl         String?
+  idCardBackUrl     String?
+  idStatus          String?       @default("PENDING")
+  idRejectionReason String?
+
   createdAt    DateTime      @default(now())
 
   appointments Appointment[]

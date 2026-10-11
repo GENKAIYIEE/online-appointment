@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { createSession } from '@/lib/session';
 import { createAdminNotification, createStaffNotification } from '@/lib/notifications';
+import { isGovIdType } from '@/lib/government-ids';
+import { isValidDocDataUrl } from '@/lib/relationship-documents';
 
 export async function loginUser(email: string, password: string) {
   try {
@@ -51,6 +53,19 @@ export async function loginUser(email: string, password: string) {
 
 export async function registerPatient(formData: any) {
   try {
+    // --- Server-side Government ID validation ---
+    // Done BEFORE the reCAPTCHA call so a bad ID doesn't burn the user's captcha token.
+    // The UI enforces this too, but server actions can be invoked directly.
+    if (!isGovIdType(formData?.idType)) {
+      return { success: false, error: 'Please select a valid Government ID type.' };
+    }
+    if (!isValidDocDataUrl(formData?.idCardUrl)) {
+      return { success: false, error: 'Please provide a valid front photo of your Government ID.' };
+    }
+    if (!isValidDocDataUrl(formData?.idCardBackUrl)) {
+      return { success: false, error: 'Please provide a valid back photo of your Government ID.' };
+    }
+
     // --- Server-side reCAPTCHA verification ---
     const captchaToken = formData.captchaToken;
     if (!captchaToken) {
@@ -108,6 +123,11 @@ export async function registerPatient(formData: any) {
         birthday: formData.birthday ? new Date(formData.birthday) : null,
         maritalStatus: formData.maritalStatus,
         gender: formData.sex,
+        idType: formData.idType,
+        idNumber: null, // not collected at registration; never trust client-supplied value
+        idCardUrl: formData.idCardUrl,
+        idCardBackUrl: formData.idCardBackUrl,
+        idStatus: "PENDING",
       },
     });
 

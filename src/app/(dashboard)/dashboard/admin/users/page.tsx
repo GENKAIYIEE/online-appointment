@@ -1,8 +1,9 @@
 import { UserManagement } from "@/components/admin/UserManagement";
 import { AdminManagement } from "@/components/admin/AdminManagement";
+import { IdVerificationPortal } from "@/components/admin/IdVerificationPortal";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, ShieldCheck } from "lucide-react";
+import { Users, ShieldCheck, FileCheck } from "lucide-react";
 
 export default function UsersPage() {
   return (
@@ -10,10 +11,10 @@ export default function UsersPage() {
       <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 tracking-tight">
-            User Management
+            User Management & ID Verification
           </h1>
           <p className="text-slate-500 mt-1">
-            Manage staff, doctor, and administrator accounts within the portal.
+            Manage staff, doctor, administrator accounts, and verify patient ID submissions.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -43,6 +44,13 @@ export default function UsersPage() {
             <ShieldCheck className="w-4 h-4 mr-2" />
             System Administrators
           </TabsTrigger>
+          <TabsTrigger 
+            value="id-verification" 
+            className="data-[state=active]:bg-white data-[state=active]:text-emerald-700 data-[state=active]:shadow-sm px-6 py-2"
+          >
+            <FileCheck className="w-4 h-4 mr-2" />
+            ID Verification Queue
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="clinical" className="mt-0 outline-none">
@@ -51,6 +59,10 @@ export default function UsersPage() {
         
         <TabsContent value="administrators" className="mt-0 outline-none">
           <AdminManagement />
+        </TabsContent>
+
+        <TabsContent value="id-verification" className="mt-0 outline-none">
+          <IdVerificationPortal />
         </TabsContent>
       </Tabs>
     </div>
