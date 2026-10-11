@@ -44,7 +44,6 @@ const navItems: Record<NonNullable<Role>, NavItem[]> = {
     { name: "Book Appointment", href: "/dashboard/patient/book", icon: CalendarPlus },
     { name: "My Appointments", href: "/dashboard/patient/appointments", icon: CalendarDays },
     { name: "View Available Slots", href: "/dashboard/patient/slots", icon: CalendarSearch },
-    { name: "Notifications", href: "/dashboard/patient/notifications", icon: Bell },
     { name: "Family Profiles", href: "/dashboard/patient/family", icon: Users2 },
     { name: "Medical Records", href: "/dashboard/patient/records", icon: FolderHeart },
   ],

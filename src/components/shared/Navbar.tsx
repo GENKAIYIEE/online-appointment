@@ -2,7 +2,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Bell, Search, Menu, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -29,7 +28,7 @@ export function Navbar({ role = "User", userName = "Account" }: NavbarProps) {
   const isStaff = role.toLowerCase() === "staff";
   const isDoctor = role.toLowerCase() === "doctor";
   const isPatient = role.toLowerCase() === "patient";
-  const hasAdvancedNotifications = isAdmin || isStaff || isDoctor;
+  const hasAdvancedNotifications = isAdmin || isStaff || isDoctor || isPatient;
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
@@ -139,109 +138,87 @@ export function Navbar({ role = "User", userName = "Account" }: NavbarProps) {
         </div>
 
       <div className="flex items-center gap-4">
-        {/* Bell — links to notifications for patients, static for others */}
-        {isPatient ? (
-          <Link href="/dashboard/patient/notifications">
-            <Button
-              variant="ghost"
-              size="icon"
-              id="navbar-notifications-btn"
-              className="relative text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-main)] transition-colors duration-200 rounded-full"
-              aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
-            >
-              <Bell className="w-5 h-5" />
-              {unreadCount > 0 && (
-                <span className="absolute top-1 right-1 min-w-[16px] h-4 bg-[var(--color-error)] rounded-full border-2 border-white flex items-center justify-center text-white text-[9px] font-bold leading-none px-0.5 shadow-sm">
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </span>
-              )}
-            </Button>
-          </Link>
-        ) : hasAdvancedNotifications ? (
-          <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
-            <PopoverTrigger className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-9 w-9 relative text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-main)] transition-colors duration-200 rounded-full">
-              <Bell className="w-5 h-5" />
-              {unreadCount > 0 && (
-                <span className="absolute top-1 right-1 min-w-[16px] h-4 bg-[var(--color-error)] rounded-full border-2 border-white flex items-center justify-center text-white text-[9px] font-bold leading-none px-0.5 shadow-sm">
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </span>
-              )}
-            </PopoverTrigger>
-            <PopoverContent className="w-80 p-0 mr-4" align="end">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-                <span className="font-semibold text-sm">Notifications</span>
-                {unreadCount > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleMarkAsRead()}
-                    className="h-auto p-0 text-xs text-blue-600 hover:text-blue-800 hover:bg-transparent"
-                  >
-                    Mark all as read
-                  </Button>
-                )}
-              </div>
-              <div className="max-h-[300px] overflow-y-auto">
-                {notifications.length > 0 ? (
-                  notifications.map((n) => (
-                    <div
-                      key={n.id}
-                      className={`flex flex-col gap-1 p-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors ${
-                        !n.isRead ? "bg-blue-50/30" : ""
-                      }`}
-                    >
-                      <div className="flex justify-between items-start gap-2">
-                        <p className={`text-sm ${!n.isRead ? "font-medium text-slate-800" : "text-slate-600"}`}>
-                          {n.message}
-                        </p>
-                        {!n.isRead && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleMarkAsRead(n.id)}
-                            className="h-6 w-6 shrink-0 text-slate-400 hover:text-blue-600"
-                            title="Mark as read"
-                          >
-                            <Check className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-slate-400">
-                        {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <div className="p-4 text-center text-sm text-slate-500">
-                    No new notifications
-                  </div>
-                )}
-              </div>
-              <div className="p-2 border-t border-slate-100">
-                <Button
-                  variant="ghost"
-                  className="w-full text-xs text-slate-600 justify-center h-8"
-                  onClick={() => {
-                    setIsPopoverOpen(false);
-                    if (isAdmin) router.push("/dashboard/admin/notifications");
-                    else if (isStaff) router.push("/dashboard/staff/notifications");
-                    else if (isDoctor) router.push("/dashboard/doctor/notifications");
-                  }}
-                >
-                  View all
-                </Button>
-              </div>
-            </PopoverContent>
-          </Popover>
-        ) : (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="relative text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-main)] transition-colors duration-200 rounded-full"
+        {/* Notification Bell Popover — works identically across Admin, Staff, Doctor, and Patient */}
+        <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+          <PopoverTrigger 
+            id="navbar-notifications-btn"
+            className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-9 w-9 relative text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-main)] transition-colors duration-200 rounded-full"
+            aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
           >
             <Bell className="w-5 h-5" />
-          </Button>
-        )}
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 min-w-[16px] h-4 bg-[var(--color-error)] rounded-full border-2 border-white flex items-center justify-center text-white text-[9px] font-bold leading-none px-0.5 shadow-sm">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </PopoverTrigger>
+          <PopoverContent className="w-80 p-0 mr-4" align="end">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+              <span className="font-semibold text-sm">Notifications</span>
+              {unreadCount > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleMarkAsRead()}
+                  className="h-auto p-0 text-xs text-blue-600 hover:text-blue-800 hover:bg-transparent"
+                >
+                  Mark all as read
+                </Button>
+              )}
+            </div>
+            <div className="max-h-[300px] overflow-y-auto">
+              {notifications.length > 0 ? (
+                notifications.map((n) => (
+                  <div
+                    key={n.id}
+                    className={`flex flex-col gap-1 p-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors ${
+                      !n.isRead ? "bg-blue-50/30" : ""
+                    }`}
+                  >
+                    <div className="flex justify-between items-start gap-2">
+                      <p className={`text-sm ${!n.isRead ? "font-medium text-slate-800" : "text-slate-600"}`}>
+                        {n.message}
+                      </p>
+                      {!n.isRead && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleMarkAsRead(n.id)}
+                          className="h-6 w-6 shrink-0 text-slate-400 hover:text-blue-600"
+                          title="Mark as read"
+                        >
+                          <Check className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-400">
+                      {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="p-4 text-center text-sm text-slate-500">
+                  No new notifications
+                </div>
+              )}
+            </div>
+            <div className="p-2 border-t border-slate-100">
+              <Button
+                variant="ghost"
+                className="w-full text-xs text-slate-600 justify-center h-8"
+                onClick={() => {
+                  setIsPopoverOpen(false);
+                  if (isAdmin) router.push("/dashboard/admin/notifications");
+                  else if (isStaff) router.push("/dashboard/staff/notifications");
+                  else if (isDoctor) router.push("/dashboard/doctor/notifications");
+                  else if (isPatient) router.push("/dashboard/patient/notifications");
+                }}
+              >
+                View all
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
 
         <div className="flex items-center gap-3 pl-4 border-l border-[var(--color-border)] ml-1">
           <div className="hidden md:flex flex-col items-end">
