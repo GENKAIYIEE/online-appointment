@@ -5,6 +5,9 @@ import bcrypt from 'bcryptjs';
 import { verifySession } from '@/lib/session';
 import { createAuditLog } from '@/lib/audit';
 import { getTodayPHT } from '@/lib/utils';
+import { revalidatePath } from 'next/cache';
+import { isValidDocDataUrl } from '@/lib/relationship-documents';
+import { isGovIdType } from '@/lib/government-ids';
 
 export async function getStaffAndDoctors(page = 1, limit = 10, search = "") {
   const session = await verifySession();
@@ -467,4 +470,129 @@ export async function getServiceDoctorMap() {
     }
   }
   return map;
+}
+
+// ──────────────────────────────────────────────────────────
+// ID VERIFICATION PORTAL ACTIONS (ADMIN & STAFF)
+// ──────────────────────────────────────────────────────────
+export async function getPatientsWithID() {
+  const session = await verifySession();
+  if (!session || (session.role !== "ADMIN" && session.role !== "STAFF")) {
+    throw new Error("Unauthorized");
+  }
+
+  // Fetch patients with uploaded ID
+  const patients = await prisma.user.findMany({
+    where: {
+      role: "PATIENT",
+      idCardUrl: { not: null },
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      idType: true,
+      idNumber: true,
+      idCardUrl: true,
+      idCardBackUrl: true,
+      idStatus: true,
+      idRejectionReason: true,
+      created_at: true,
+    },
+    take: 100,
+    orderBy: { created_at: "desc" },
+  });
+
+  // Fetch family sub-profiles with uploaded ID
+  const familyMembers = await prisma.subProfile.findMany({
+    where: {
+      idCardUrl: { not: null },
+    },
+    include: {
+      owner: { select: { name: true, email: true, phone: true } },
+    },
+    take: 100,
+    orderBy: { createdAt: "desc" },
+  });
+
+  return { patients, familyMembers };
+}
+
+export async function updateIDVerificationStatus(
+  targetId: string,
+  targetType: "PATIENT" | "SUBPROFILE",
+  status: "VERIFIED" | "REJECTED",
+  rejectionReason?: string
+) {
+  const session = await verifySession();
+  if (!session || (session.role !== "ADMIN" && session.role !== "STAFF")) {
+    throw new Error("Unauthorized");
+  }
+
+  if (targetType === "PATIENT") {
+    await prisma.user.update({
+      where: { id: targetId },
+      data: {
+        idStatus: status,
+        idRejectionReason: status === "REJECTED" ? rejectionReason || "ID documentation invalid" : null,
+      },
+    });
+  } else {
+    await prisma.subProfile.update({
+      where: { id: targetId },
+      data: {
+        idStatus: status,
+        idRejectionReason: status === "REJECTED" ? rejectionReason || "ID documentation invalid" : null,
+      },
+    });
+  }
+
+  revalidatePath("/dashboard/admin/users");
+  revalidatePath("/dashboard/patient");
+  return { success: true };
+}
+
+export async function submitPatientIDVerification(data: {
+  idType: string;
+  idCardUrl: string;
+  idCardBackUrl?: string;
+}) {
+  const session = await verifySession();
+  if (!session || session.role !== "PATIENT") {
+    return { success: false, error: "Unauthorized. Please log in as a patient." };
+  }
+
+  if (!isGovIdType(data?.idType)) {
+    return { success: false, error: "Please select a valid Government ID Type." };
+  }
+
+  if (!isValidDocDataUrl(data?.idCardUrl)) {
+    return {
+      success: false,
+      error: "Please provide a valid front photo (JPG, PNG, WEBP, or PDF) of your Government ID.",
+    };
+  }
+
+  if (!isValidDocDataUrl(data?.idCardBackUrl)) {
+    return {
+      success: false,
+      error: "Please provide a valid back photo (JPG, PNG, WEBP, or PDF) of your Government ID.",
+    };
+  }
+
+  await prisma.user.update({
+    where: { id: session.userId },
+    data: {
+      idType: data.idType,
+      idCardUrl: data.idCardUrl,
+      idCardBackUrl: data.idCardBackUrl,
+      idStatus: "PENDING",
+      idRejectionReason: null,
+    },
+  });
+
+  revalidatePath("/dashboard/patient");
+  revalidatePath("/dashboard/admin/users");
+  return { success: true };
 }

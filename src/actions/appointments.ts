@@ -7,6 +7,7 @@ import { formatDatePHT, getTodayPHT } from "@/lib/utils";
 import { getClinicConfig } from "@/actions/clinic-config";
 import bcrypt from "bcryptjs";
 import { createAuditLog } from "@/lib/audit";
+import { getVerificationBlockReason } from "@/lib/patient-verification";
 
 // ──────────────────────────────────────────────────────────
 // GET available slots for a reschedule operation
@@ -85,6 +86,11 @@ export async function rescheduleAppointment(
       return { success: false, error: "Not authenticated" };
     }
 
+    if (session?.role === "PATIENT") {
+      const blockReason = await getVerificationBlockReason(patientId);
+      if (blockReason) return { success: false, error: blockReason };
+    }
+
     // Use 12:00 PM UTC to prevent ANY timezone shift (works for both local and UTC truncations)
     const newDate = new Date(`${newDateString}T00:00:00Z`);
     const todayPHT = getTodayPHT();
@@ -103,6 +109,12 @@ export async function rescheduleAppointment(
       if (!appointment) throw new Error("Appointment not found");
       if (appointment.status !== "CONFIRMED")
         throw new Error("Only confirmed appointments can be rescheduled");
+
+      // Verify sub-profile if rescheduled appointment is for a family member
+      if (session?.role === "PATIENT" && appointment.subProfileId) {
+        const subBlock = await getVerificationBlockReason(patientId, appointment.subProfileId);
+        if (subBlock) throw new Error(subBlock);
+      }
 
       const todayPHT = getTodayPHT();
       

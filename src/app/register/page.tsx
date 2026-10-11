@@ -11,8 +11,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { ArrowRight, ArrowLeft, Eye, EyeOff } from "lucide-react";
+import { ArrowRight, ArrowLeft, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import ReCAPTCHA from "react-google-recaptcha";
+import { IDScanner } from "@/components/ui/id-scanner";
 
 const formSchema = z.object({
   firstName: z.string().min(2, "First name must be at least 2 characters"),
@@ -95,6 +96,11 @@ export default function RegisterPage() {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const recaptchaRef = useRef<ReCAPTCHA>(null);
 
+  // Government ID Verification state
+  const [idType, setIdType] = useState("");
+  const [idCardUrl, setIdCardUrl] = useState("");
+  const [idCardBackUrl, setIdCardBackUrl] = useState("");
+
   const {
     register,
     handleSubmit,
@@ -149,6 +155,21 @@ export default function RegisterPage() {
     const isStep2Valid = await trigger(fieldsToValidate);
     if (!isStep2Valid) return;
 
+    if (!idType) {
+      toast.error("Please select a valid Government ID Type.");
+      return;
+    }
+
+    if (!idCardUrl) {
+      toast.error("Please upload or scan the front photo of your Government ID.");
+      return;
+    }
+
+    if (!idCardBackUrl) {
+      toast.error("Please upload or scan the back photo of your Government ID.");
+      return;
+    }
+
     if (!captchaToken) {
       toast.error("Please complete the CAPTCHA verification.");
       return;
@@ -160,6 +181,15 @@ export default function RegisterPage() {
   const onSubmit = async (data: FormValues) => {
     if (!captchaToken) {
       toast.error("Please complete the CAPTCHA verification.");
+      return;
+    }
+
+    if (!idCardUrl) {
+      toast.error("Government ID front photo is required for verification.");
+      return;
+    }
+    if (!idCardBackUrl) {
+      toast.error("Government ID back photo is required for verification.");
       return;
     }
 
@@ -177,6 +207,9 @@ export default function RegisterPage() {
       const res = await registerPatient({
         ...data,
         birthday: isoBirthday,
+        idType,
+        idCardUrl,
+        idCardBackUrl,
         captchaToken,
       });
 
@@ -423,6 +456,18 @@ export default function RegisterPage() {
                   {errors.confirmPassword && <p className="text-red-500 text-xs">{errors.confirmPassword.message}</p>}
                 </div>
 
+                {/* Government ID Scanner & Photo Verification */}
+                <IDScanner
+                  idType={idType}
+                  idCardUrl={idCardUrl}
+                  idCardBackUrl={idCardBackUrl}
+                  onIdTypeChange={setIdType}
+                  onIdCardChange={setIdCardUrl}
+                  onIdCardBackChange={setIdCardBackUrl}
+                  label="Government ID Verification"
+                  required
+                />
+
                 <div className="flex items-center gap-2 pt-2">
                   <input type="checkbox" id="terms" {...register("terms")} className="rounded text-green-600 focus:ring-green-600 w-4 h-4" />
                   <label htmlFor="terms" className="text-sm text-slate-600">
@@ -485,6 +530,29 @@ export default function RegisterPage() {
                     <div className="md:col-span-2">
                       <span className="text-slate-500">Complete Address:</span>
                       <p className="font-semibold text-slate-900">{formData.address}</p>
+                    </div>
+                    <div className="md:col-span-2 border-t border-slate-200 pt-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div>
+                        <span className="text-slate-500">Government ID Provided:</span>
+                        <p className="font-semibold text-emerald-800 flex items-center gap-1.5 mt-0.5">
+                          <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                          {idType}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        {idCardUrl && (
+                          <div className="w-28 rounded-lg overflow-hidden border border-emerald-300 bg-slate-900 shadow-sm shrink-0">
+                            <p className="text-[9px] font-semibold text-center bg-emerald-600 text-white py-0.5">FRONT</p>
+                            <img src={idCardUrl} alt="ID Front" className="w-full h-16 object-cover" />
+                          </div>
+                        )}
+                        {idCardBackUrl && (
+                          <div className="w-28 rounded-lg overflow-hidden border border-emerald-300 bg-slate-900 shadow-sm shrink-0">
+                            <p className="text-[9px] font-semibold text-center bg-slate-600 text-white py-0.5">BACK</p>
+                            <img src={idCardBackUrl} alt="ID Back" className="w-full h-16 object-cover" />
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

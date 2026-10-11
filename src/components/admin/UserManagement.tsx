@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -571,9 +572,34 @@ export function UserManagement() {
         </CardHeader>
         <CardContent>
           {loadingUsers ? (
-            <div className="flex items-center justify-center py-12 text-slate-400">
-              <Loader2 className="w-6 h-6 animate-spin mr-2" />
-              Loading users…
+            <div className="rounded-md border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50/80">
+                    <TableHead>Name</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Assigned Service</TableHead>
+                    <TableHead>Phone</TableHead>
+                    <TableHead>Registered</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <TableRow key={i}>
+                      <TableCell>
+                        <Skeleton className="w-32 h-4 mb-1.5" />
+                        <Skeleton className="w-48 h-3" />
+                      </TableCell>
+                      <TableCell><Skeleton className="w-16 h-5 rounded-full" /></TableCell>
+                      <TableCell><Skeleton className="w-24 h-4" /></TableCell>
+                      <TableCell><Skeleton className="w-24 h-4" /></TableCell>
+                      <TableCell><Skeleton className="w-20 h-4" /></TableCell>
+                      <TableCell><Skeleton className="w-16 h-8 ml-auto" /></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           ) : users.length === 0 ? (
             <div className="text-center py-12 text-slate-400">

@@ -5,6 +5,7 @@ import { verifySession } from "@/lib/session";
 import { revalidatePath } from "next/cache";
 import { formatDatePHT, getTodayPHT, isTimeSlotPassedPHT } from "@/lib/utils";
 import { createAdminNotification, createStaffNotification } from "@/lib/notifications";
+import { getVerificationBlockReason } from "@/lib/patient-verification";
 
 export async function getDoctorForService(serviceName: string) {
   const service = await prisma.service.findUnique({
@@ -108,6 +109,13 @@ export async function createAppointment(data: {
       return { success: false, error: "Not authenticated. Please log in again." };
     }
     const patientId = session.userId;
+
+    // Server-side verification gate. The UI guard alone is bypassable because
+    // server actions can be called directly. Also enforces sub-profile ownership.
+    const blockReason = await getVerificationBlockReason(patientId, data.subProfileId);
+    if (blockReason) {
+      return { success: false, error: blockReason };
+    }
 
     const date = new Date(`${data.date}T00:00:00Z`);
 

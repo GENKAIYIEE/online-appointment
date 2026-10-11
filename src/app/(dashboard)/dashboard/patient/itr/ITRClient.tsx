@@ -36,8 +36,6 @@ export default function ITRClient({ targetId, isSubProfile, initialData }: { tar
   const [contactNumber, setContactNumber] = useState(user?.phone || "");
 
   // Form State - ITR Fields
-  const [familySerialNumber, setFamilySerialNumber] = useState(itr?.familySerialNumber || "");
-  const [familyCode, setFamilyCode] = useState(itr?.familyCode || "");
   const [philhealthNumber, setPhilhealthNumber] = useState(itr?.philhealthNumber || "");
   const [memberType, setMemberType] = useState(itr?.memberType || "Member");
   const [clientType, setClientType] = useState<string[]>(itr?.clientType ? (typeof itr.clientType === 'string' ? JSON.parse(itr.clientType) : itr.clientType) : []);
@@ -150,7 +148,7 @@ export default function ITRClient({ targetId, isSubProfile, initialData }: { tar
         name: `${firstName} ${lastName}`.trim()
       },
       itrFields: {
-        familySerialNumber, familyCode, philhealthNumber, memberType,
+        philhealthNumber, memberType,
         clientType: JSON.stringify(clientType),
         
         dependentLastName, dependentFirstName, dependentMiddleName, dependentPin,
@@ -269,22 +267,6 @@ export default function ITRClient({ targetId, isSubProfile, initialData }: { tar
           </div>
           {sectionsOpen.sec1 && (
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              
-              <div className="space-y-2 lg:col-span-2">
-                <div className="flex items-center gap-1">
-                  <Label>Family Serial Number</Label>
-                  <span className="text-slate-400 font-normal text-sm">(If applicable)</span>
-                </div>
-                <Input value={familySerialNumber} onChange={e => setFamilySerialNumber(e.target.value)} />
-              </div>
-              <div className="space-y-2 lg:col-span-2">
-                <div className="flex items-center gap-1">
-                  <Label>Family Code</Label>
-                  <span className="text-slate-400 font-normal text-sm">(If applicable)</span>
-                </div>
-                <Input value={familyCode} onChange={e => setFamilyCode(e.target.value)} />
-              </div>
-
               {/* Editable Registration Fields */}
               <div className="space-y-2">
                 <div className="flex items-center gap-1">

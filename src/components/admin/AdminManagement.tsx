@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, UserPlus, Users, Pencil, Trash2, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createAdmin, getAdmins, updateAdmin, deleteUser } from "@/actions/users";
@@ -294,8 +295,32 @@ export function AdminManagement() {
         </CardHeader>
         <CardContent>
           {loadingAdmins ? (
-            <div className="flex justify-center items-center py-8">
-              <Loader2 className="w-6 h-6 animate-spin text-slate-300" />
+            <div className="overflow-hidden rounded-lg border border-slate-200">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Name</th>
+                    <th className="px-4 py-3 font-medium">Email</th>
+                    <th className="px-4 py-3 font-medium">Created On</th>
+                    <th className="px-4 py-3 font-medium text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {[1, 2, 3].map((i) => (
+                    <tr key={i}>
+                      <td className="px-4 py-3"><Skeleton className="w-32 h-4" /></td>
+                      <td className="px-4 py-3"><Skeleton className="w-48 h-4" /></td>
+                      <td className="px-4 py-3"><Skeleton className="w-24 h-4" /></td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Skeleton className="w-8 h-8 rounded-md" />
+                          <Skeleton className="w-8 h-8 rounded-md" />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : adminsList.length === 0 ? (
             <div className="text-center py-8 text-slate-500 text-sm">

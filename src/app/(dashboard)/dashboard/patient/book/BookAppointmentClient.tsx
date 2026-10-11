@@ -135,7 +135,14 @@ export default function BookAppointmentClient({
   const [notes, setNotes] = useState("");
 
   // Sub-profile (family member) state
-  type SubProfileOption = { id: string; firstName: string; lastName: string; relationship: string; itr?: { isCompleted: boolean } };
+  type SubProfileOption = {
+    id: string;
+    firstName: string;
+    lastName: string;
+    relationship: string;
+    idStatus?: string | null;
+    itr?: { isCompleted: boolean };
+  };
   const [subProfiles, setSubProfiles] = useState<SubProfileOption[]>([]);
   const [selectedSubProfileId, setSelectedSubProfileId] = useState<string | null | undefined>(undefined); // undefined = unselected, null = "Myself"
   const [isFetchingProfiles, setIsFetchingProfiles] = useState(false);
@@ -350,20 +357,33 @@ export default function BookAppointmentClient({
                   {/* Family member options */}
                   {subProfiles.map((sp) => {
                     const hasITR = sp.itr?.isCompleted;
+                    const isVerified = sp.idStatus === "VERIFIED";
+                    const isRejected = sp.idStatus === "REJECTED";
+                    const canSelect = !!hasITR && isVerified;
+
                     return (
                       <button
                         key={sp.id}
+                        type="button"
                         onClick={() => {
                           if (!hasITR) {
                             toast.error(`${sp.firstName} needs a completed health record first. Please manage their record from the Family Profiles page.`);
+                            return;
+                          }
+                          if (!isVerified) {
+                            if (isRejected) {
+                              toast.error(`${sp.firstName}'s proof of relationship was rejected. Please re-upload proof in Family Profiles.`);
+                            } else {
+                              toast.error(`${sp.firstName}'s proof of relationship is awaiting clinic verification before booking.`);
+                            }
                             return;
                           }
                           setSelectedSubProfileId(sp.id);
                         }}
                         className={cn(
                           "flex flex-col justify-center p-3 rounded-xl border-2 text-sm font-medium transition-all duration-150 relative bg-white text-left",
-                          !hasITR
-                            ? "border-red-200 text-slate-400 cursor-not-allowed"
+                          !canSelect
+                            ? "border-slate-200 bg-slate-50/60 text-slate-400 cursor-not-allowed"
                             : selectedSubProfileId === sp.id
                               ? "border-emerald-600 bg-emerald-50 text-emerald-900 shadow-sm"
                               : "border-slate-200 text-slate-600 hover:border-emerald-200"
@@ -383,11 +403,22 @@ export default function BookAppointmentClient({
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-normal truncate">
                             {sp.relationship}
                           </span>
-                          {!hasITR && (
+                          {!hasITR ? (
                             <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 truncate">
                               Needs ITR
                             </span>
-                          )}
+                          ) : !isVerified ? (
+                            <span
+                              className={cn(
+                                "text-[10px] font-bold px-1.5 py-0.5 rounded border truncate",
+                                isRejected
+                                  ? "text-rose-600 bg-rose-50 border-rose-200"
+                                  : "text-amber-700 bg-amber-50 border-amber-200"
+                              )}
+                            >
+                              {isRejected ? "Proof Rejected" : "Proof Pending"}
+                            </span>
+                          ) : null}
                         </div>
                       </button>
                     );
