@@ -17,6 +17,15 @@ import {
   AlertTriangle,
   FileText,
   Layers,
+  Phone,
+  Mail,
+  MapPin,
+  Calendar,
+  UserCheck,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -40,6 +49,11 @@ interface PatientRecord {
   name: string;
   email: string | null;
   phone: string | null;
+  firstName?: string | null;
+  middleName?: string | null;
+  lastName?: string | null;
+  suffix?: string | null;
+  address?: string | null;
   idType: string | null;
   idNumber: string | null;
   idCardUrl: string | null;
@@ -49,11 +63,22 @@ interface PatientRecord {
   created_at: Date;
 }
 
+interface OwnerDetails {
+  id: string;
+  username: string;
+  fullName: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+}
+
 interface FamilyMemberRecord {
   id: string;
   firstName: string;
   lastName: string;
   middleName: string | null;
+  birthday: Date | string | null;
+  gender: string | null;
   relationship: string;
   idType: string | null;
   idNumber: string | null;
@@ -63,10 +88,29 @@ interface FamilyMemberRecord {
   idRejectionReason: string | null;
   createdAt: Date;
   owner: {
+    id: string;
     name: string;
     email: string | null;
     phone: string | null;
+    firstName?: string | null;
+    middleName?: string | null;
+    lastName?: string | null;
+    suffix?: string | null;
+    address?: string | null;
   };
+}
+
+function formatAge(birthday?: Date | string | null): string | null {
+  if (!birthday) return null;
+  const dob = new Date(birthday);
+  if (isNaN(dob.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+    age--;
+  }
+  return age >= 0 ? `${age} yrs old` : null;
 }
 
 export function IdVerificationPortal() {
@@ -79,13 +123,47 @@ export function IdVerificationPortal() {
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | "PATIENT" | "SUBPROFILE">("ALL");
 
   const [viewImageModal, setViewImageModal] = useState<{
+    id: string;
     url: string;
     backUrl?: string | null;
     name: string;
     type: string;
     idNumber?: string;
     isDocument?: boolean;
+    recordType: "PATIENT" | "SUBPROFILE";
+    idStatus: string;
+    relationship?: string;
+    birthday?: Date | string | null;
+    gender?: string | null;
+    ownerDetails?: OwnerDetails;
+    date?: Date;
   } | null>(null);
+
+  // Document Viewer Inspector State
+  const [activeDocPage, setActiveDocPage] = useState<"PAGE1" | "PAGE2" | "SPLIT">("PAGE1");
+  const [docZoom, setDocZoom] = useState<number>(1);
+  const [docRotation, setDocRotation] = useState<number>(0);
+
+  const openRawDocument = (url: string) => {
+    if (!url) return;
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    const newWin = window.open("", "_blank");
+    if (newWin) {
+      if (url.startsWith("data:application/pdf")) {
+        newWin.document.write(
+          `<!DOCTYPE html><html><head><title>Document Preview</title><style>html,body{margin:0;height:100%;overflow:hidden;background:#0f172a;}</style></head><body><iframe src="${url}" width="100%" height="100%" style="border:none;"></iframe></body></html>`
+        );
+      } else {
+        newWin.document.write(
+          `<!DOCTYPE html><html><head><title>Full Resolution Document Inspection</title><style>html,body{margin:0;height:100%;background:#090d16;display:flex;align-items:center;justify-content:center;}</style></head><body><img src="${url}" style="max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 10px 40px rgba(0,0,0,0.8);" /></body></html>`
+        );
+      }
+      newWin.document.close();
+    }
+  };
 
   // Reject Modal
   const [rejectModalTarget, setRejectModalTarget] = useState<{
@@ -159,38 +237,85 @@ export function IdVerificationPortal() {
     idRejectionReason: string | null;
     date: Date;
     isDocument: boolean;
+    relationship?: string;
+    birthday?: Date | string | null;
+    gender?: string | null;
+    ownerDetails?: OwnerDetails;
   };
 
   // Combine and format records
   const allRecords: FormattedRecord[] = [
-    ...patients.map((p) => ({
-      id: p.id,
-      recordType: "PATIENT" as const,
-      name: p.name,
-      subtitle: p.email || p.phone || "Main Account Patient",
-      idType: p.idType,
-      idNumber: p.idNumber,
-      idCardUrl: p.idCardUrl,
-      idCardBackUrl: p.idCardBackUrl,
-      idStatus: p.idStatus || "PENDING",
-      idRejectionReason: p.idRejectionReason,
-      date: new Date(p.created_at),
-      isDocument: false,
-    })),
-    ...familyMembers.map((fm) => ({
-      id: fm.id,
-      recordType: "SUBPROFILE" as const,
-      name: `${fm.firstName} ${fm.lastName}`,
-      subtitle: `Proxy for ${fm.owner.name} (${fm.relationship})`,
-      idType: fm.idType,
-      idNumber: fm.idNumber,
-      idCardUrl: fm.idCardUrl,
-      idCardBackUrl: fm.idCardBackUrl,
-      idStatus: fm.idStatus || "PENDING",
-      idRejectionReason: fm.idRejectionReason,
-      date: new Date(fm.createdAt),
-      isDocument: isRelationshipDocType(fm.idType),
-    })),
+    ...patients.map((p) => {
+      const legalName = [p.firstName, p.middleName, p.lastName, p.suffix]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      return {
+        id: p.id,
+        recordType: "PATIENT" as const,
+        name: legalName || p.name,
+        subtitle: p.email || p.phone || "Main Account Patient",
+        idType: p.idType,
+        idNumber: p.idNumber,
+        idCardUrl: p.idCardUrl,
+        idCardBackUrl: p.idCardBackUrl,
+        idStatus: p.idStatus || "PENDING",
+        idRejectionReason: p.idRejectionReason,
+        date: new Date(p.created_at),
+        isDocument: false,
+        ownerDetails: {
+          id: p.id,
+          username: p.name,
+          fullName: legalName || p.name,
+          email: p.email,
+          phone: p.phone,
+          address: p.address || null,
+        },
+      };
+    }),
+    ...familyMembers.map((fm) => {
+      const ownerLegal = [
+        fm.owner.firstName,
+        fm.owner.middleName,
+        fm.owner.lastName,
+        fm.owner.suffix,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+
+      const ownerFullName = ownerLegal || fm.owner.name;
+      const dependentFullName = [fm.firstName, fm.middleName, fm.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+
+      return {
+        id: fm.id,
+        recordType: "SUBPROFILE" as const,
+        name: dependentFullName,
+        subtitle: `Proxy: ${ownerFullName} (${fm.relationship})`,
+        relationship: fm.relationship,
+        birthday: fm.birthday,
+        gender: fm.gender,
+        idType: fm.idType,
+        idNumber: fm.idNumber,
+        idCardUrl: fm.idCardUrl,
+        idCardBackUrl: fm.idCardBackUrl,
+        idStatus: fm.idStatus || "PENDING",
+        idRejectionReason: fm.idRejectionReason,
+        date: new Date(fm.createdAt),
+        isDocument: isRelationshipDocType(fm.idType),
+        ownerDetails: {
+          id: fm.owner.id,
+          username: fm.owner.name,
+          fullName: ownerFullName,
+          email: fm.owner.email,
+          phone: fm.owner.phone,
+          address: fm.owner.address || null,
+        },
+      };
+    }),
   ];
 
   // Category partitions and pending totals
@@ -203,10 +328,18 @@ export function IdVerificationPortal() {
 
   // Filter records by search and status
   const filteredRecords = allRecords.filter((r) => {
+    const q = search.toLowerCase();
     const matchesSearch =
-      r.name.toLowerCase().includes(search.toLowerCase()) ||
-      r.subtitle.toLowerCase().includes(search.toLowerCase()) ||
-      (r.idType && r.idType.toLowerCase().includes(search.toLowerCase()));
+      r.name.toLowerCase().includes(q) ||
+      r.subtitle.toLowerCase().includes(q) ||
+      (r.idType && r.idType.toLowerCase().includes(q)) ||
+      (r.idNumber && r.idNumber.toLowerCase().includes(q)) ||
+      (r.relationship && r.relationship.toLowerCase().includes(q)) ||
+      (r.ownerDetails?.fullName && r.ownerDetails.fullName.toLowerCase().includes(q)) ||
+      (r.ownerDetails?.username && r.ownerDetails.username.toLowerCase().includes(q)) ||
+      (r.ownerDetails?.email && r.ownerDetails.email.toLowerCase().includes(q)) ||
+      (r.ownerDetails?.phone && r.ownerDetails.phone.toLowerCase().includes(q)) ||
+      (r.ownerDetails?.address && r.ownerDetails.address.toLowerCase().includes(q));
 
     const matchesStatus =
       filterStatus === "ALL" || r.idStatus === filterStatus;
@@ -240,187 +373,260 @@ export function IdVerificationPortal() {
     }
   };
 
-  const renderRecordCard = (item: FormattedRecord) => (
-    <Card
-      key={`${item.recordType}-${item.id}`}
-      className="border border-slate-200 shadow-sm hover:border-slate-300 transition-colors flex flex-col rounded-lg overflow-hidden"
-    >
-      <div className="px-4 py-3 bg-slate-50/70 border-b border-slate-200 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {item.recordType === "PATIENT" ? (
-            <User className="w-3.5 h-3.5 text-slate-500" />
-          ) : (
-            <Users className="w-3.5 h-3.5 text-slate-500" />
-          )}
-          <span className="text-xs font-semibold text-slate-600">
-            {item.recordType === "PATIENT" ? "Patient ID" : "Family Proof"}
-          </span>
-        </div>
-        {getBadge(item.idStatus)}
-      </div>
+  const renderRecordCard = (item: FormattedRecord) => {
+    const openModal = () => {
+      setActiveDocPage("PAGE1");
+      setDocZoom(1);
+      setDocRotation(0);
+      setViewImageModal({
+        id: item.id,
+        url: item.idCardUrl!,
+        backUrl: item.idCardBackUrl,
+        name: item.name,
+        type: item.idType || (item.isDocument ? "Supporting Document" : "ID Card"),
+        idNumber: item.idNumber || undefined,
+        isDocument: item.isDocument,
+        recordType: item.recordType,
+        idStatus: item.idStatus,
+        relationship: item.relationship,
+        birthday: item.birthday,
+        gender: item.gender,
+        ownerDetails: item.ownerDetails,
+        date: item.date,
+      });
+    };
 
-      <CardContent className="p-4 flex-1 flex flex-col justify-between space-y-3.5">
-        <div>
-          <h3 className="font-semibold text-slate-900 text-sm">{item.name}</h3>
-          <p className="text-xs text-slate-500 mt-0.5">{item.subtitle}</p>
-
-          <div className="mt-3 p-2.5 bg-slate-50 rounded-md space-y-1 border border-slate-200/80 text-xs">
-            <div className="flex justify-between gap-2">
-              <span className="text-slate-500 shrink-0">
-                {item.isDocument ? "Document:" : "ID Type:"}
-              </span>
-              <span className="font-medium text-slate-800 text-right">{item.idType || "Not Specified"}</span>
-            </div>
-            {item.idNumber && (
-              <div className="flex justify-between gap-2">
-                <span className="text-slate-500">ID Number:</span>
-                <span className="font-mono text-slate-800 font-medium">{item.idNumber}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ID / Document Image Thumbnails */}
-        <div className="flex gap-2">
-          {item.idCardUrl && (
-            <div className="relative group flex-1 rounded-md overflow-hidden border border-slate-200 bg-slate-900 aspect-video flex items-center justify-center">
-              <p className="absolute top-0 left-0 right-0 text-[9px] font-semibold text-center bg-slate-900/80 backdrop-blur-sm text-slate-200 py-0.5 z-10">
-                {item.isDocument ? "PAGE 1" : "FRONT"}
-              </p>
-              {item.idCardUrl.startsWith("data:application/pdf") ? (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-slate-400 pb-2">
-                  <FileText className="w-7 h-7 opacity-50 mb-1 mt-4" />
-                  <span className="text-[10px] font-semibold tracking-wider">PDF</span>
-                </div>
-              ) : (
-                <img
-                  src={item.idCardUrl}
-                  alt={item.isDocument ? "Document Page 1" : "ID Front"}
-                  className={`w-full h-full ${item.isDocument ? "object-contain" : "object-cover"} group-hover:scale-105 transition duration-300`}
-                />
-              )}
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center z-20">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() =>
-                    setViewImageModal({
-                      url: item.idCardUrl!,
-                      backUrl: item.idCardBackUrl,
-                      name: item.name,
-                      type: item.idType || (item.isDocument ? "Supporting Document" : "ID Card"),
-                      idNumber: item.idNumber || undefined,
-                      isDocument: item.isDocument,
-                    })
-                  }
-                  className="gap-1 text-xs bg-white text-slate-900 font-medium h-7 px-2.5 shadow-sm"
-                >
-                  <Eye className="w-3.5 h-3.5" /> View
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {item.idCardBackUrl && (
-            <div className="relative group flex-1 rounded-md overflow-hidden border border-slate-200 bg-slate-900 aspect-video flex items-center justify-center">
-              <p className="absolute top-0 left-0 right-0 text-[9px] font-semibold text-center bg-slate-900/80 backdrop-blur-sm text-slate-200 py-0.5 z-10">
-                {item.isDocument ? "PAGE 2" : "BACK"}
-              </p>
-              {item.idCardBackUrl.startsWith("data:application/pdf") ? (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-slate-400 pb-2">
-                  <FileText className="w-7 h-7 opacity-50 mb-1 mt-4" />
-                  <span className="text-[10px] font-semibold tracking-wider">PDF</span>
-                </div>
-              ) : (
-                <img
-                  src={item.idCardBackUrl}
-                  alt={item.isDocument ? "Document Page 2" : "ID Back"}
-                  className={`w-full h-full ${item.isDocument ? "object-contain" : "object-cover"} group-hover:scale-105 transition duration-300`}
-                />
-              )}
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center z-20">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() =>
-                    setViewImageModal({
-                      url: item.idCardUrl!,
-                      backUrl: item.idCardBackUrl,
-                      name: item.name,
-                      type: item.idType || (item.isDocument ? "Supporting Document" : "ID Card"),
-                      idNumber: item.idNumber || undefined,
-                      isDocument: item.isDocument,
-                    })
-                  }
-                  className="gap-1 text-xs bg-white text-slate-900 font-medium h-7 px-2.5 shadow-sm"
-                >
-                  <Eye className="w-3.5 h-3.5" /> View
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {item.idRejectionReason && (
-          <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-md text-xs text-rose-800 flex items-start gap-1.5">
-            <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
-            <span><strong>Rejection Reason:</strong> {item.idRejectionReason}</span>
-          </div>
-        )}
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              setViewImageModal({
-                url: item.idCardUrl!,
-                backUrl: item.idCardBackUrl,
-                name: item.name,
-                type: item.idType || (item.isDocument ? "Supporting Document" : "ID Card"),
-                idNumber: item.idNumber || undefined,
-                isDocument: item.isDocument,
-              })
-            }
-            className="flex-1 gap-1 text-slate-700 text-xs h-8 border-slate-200"
-          >
-            <Eye className="w-3.5 h-3.5" /> View
-          </Button>
-
-          <Button
-            size="sm"
-            onClick={() => handleApprove(item.id, item.recordType)}
-            disabled={updating === item.id || item.idStatus !== "PENDING"}
-            className="flex-1 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8"
-          >
-            {updating === item.id ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+    return (
+      <Card
+        key={`${item.recordType}-${item.id}`}
+        className="border border-slate-200/90 shadow-sm hover:shadow transition-all bg-white flex flex-col rounded-xl overflow-hidden"
+      >
+        <div className="px-4 py-2.5 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-1.5 font-medium text-slate-600">
+            {item.recordType === "PATIENT" ? (
+              <User className="w-3.5 h-3.5 text-slate-500" />
             ) : (
-              <CheckCircle2 className="w-3.5 h-3.5" />
+              <Users className="w-3.5 h-3.5 text-indigo-600" />
             )}
-            Approve
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              setRejectModalTarget({
-                id: item.id,
-                type: item.recordType,
-                name: item.name,
-              })
-            }
-            disabled={updating === item.id || item.idStatus !== "PENDING"}
-            className="gap-1 text-xs px-2.5 h-8 border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
-          >
-            <XCircle className="w-3.5 h-3.5" /> Reject
-          </Button>
+            <span>{item.recordType === "PATIENT" ? "Patient ID" : "Family Relationship Proof"}</span>
+          </div>
+          {getBadge(item.idStatus)}
         </div>
-      </CardContent>
-    </Card>
-  );
+
+        <CardContent className="p-4 flex-1 flex flex-col justify-between space-y-4">
+          <div className="space-y-3.5">
+            {/* Subject Header */}
+            <div>
+              <h3 className="font-bold text-slate-900 text-base leading-snug">
+                {item.name}
+              </h3>
+              {item.recordType === "SUBPROFILE" ? (
+                <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-500 flex-wrap">
+                  <Badge className="bg-sky-50 text-sky-700 border-sky-200 text-[11px] font-semibold py-0 px-2 rounded-full shadow-none hover:bg-sky-50">
+                    {item.relationship}
+                  </Badge>
+                  {(item.birthday || item.gender) && (
+                    <span className="text-slate-500 font-medium">
+                      {formatAge(item.birthday) ? `${formatAge(item.birthday)}` : ""}
+                      {formatAge(item.birthday) && item.gender ? " • " : ""}
+                      {item.gender || ""}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 mt-0.5">{item.subtitle}</p>
+              )}
+            </div>
+
+            {/* Submitter Dossier (Clean Divider layout, NO nested grey boxes!) */}
+            {item.recordType === "SUBPROFILE" && item.ownerDetails && (
+              <div className="pt-2.5 border-t border-slate-100 space-y-1.5 text-xs">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Proxy Submitter
+                </span>
+
+                <div className="font-semibold text-slate-800 text-sm">
+                  {item.ownerDetails.fullName}
+                  {item.ownerDetails.fullName !== item.ownerDetails.username && (
+                    <span className="text-slate-400 font-normal text-xs ml-1.5">
+                      (@{item.ownerDetails.username})
+                    </span>
+                  )}
+                </div>
+
+                {/* Contact rows: each on its own full-width line so email NEVER crops! */}
+                <div className="space-y-1 text-slate-600 pt-0.5">
+                  <div className="flex items-center gap-2">
+                    <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="font-mono text-xs">{item.ownerDetails.phone || "No phone number"}</span>
+                  </div>
+                  <div className="flex items-start gap-2 min-w-0">
+                    <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                    <span className="text-xs break-all text-slate-700 font-mono" title={item.ownerDetails.email || undefined}>
+                      {item.ownerDetails.email || "No email address"}
+                    </span>
+                  </div>
+                  {item.ownerDetails.address && (
+                    <div className="flex items-center gap-2 min-w-0 text-slate-500">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="text-xs truncate" title={item.ownerDetails.address}>
+                        {item.ownerDetails.address}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Patient Specific Meta (if PATIENT) */}
+            {item.recordType === "PATIENT" && (
+              <div className="pt-2.5 border-t border-slate-100 space-y-1 text-xs">
+                <div className="flex justify-between py-0.5">
+                  <span className="text-slate-500">ID Type</span>
+                  <span className="font-medium text-slate-800">{item.idType || "Not Specified"}</span>
+                </div>
+                {item.idNumber && (
+                  <div className="flex justify-between py-0.5">
+                    <span className="text-slate-500">ID Number</span>
+                    <span className="font-mono font-medium text-slate-800">{item.idNumber}</span>
+                  </div>
+                )}
+                {item.ownerDetails?.address && (
+                  <div className="flex items-center gap-1.5 text-slate-500 pt-1">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="truncate">{item.ownerDetails.address}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Document Meta Header directly above Image */}
+            <div className="pt-2.5 border-t border-slate-100">
+              <div className="flex items-center justify-between text-[11px] mb-1.5">
+                <span className="font-semibold text-slate-700 truncate" title={item.idType || "Document"}>
+                  {item.idType || "Document"}
+                </span>
+                <span className="text-slate-400 text-[10px] shrink-0 font-medium">
+                  {item.date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                </span>
+              </div>
+
+              {/* Image Preview Canvas */}
+              <div className="flex gap-2">
+                {item.idCardUrl && (
+                  <div
+                    onClick={openModal}
+                    className="relative group flex-1 rounded-lg overflow-hidden border border-slate-200 bg-slate-900 aspect-video flex items-center justify-center cursor-pointer hover:border-slate-400 transition"
+                  >
+                    <span className="absolute top-1.5 left-1.5 text-[9px] font-bold uppercase tracking-wider bg-black/70 backdrop-blur-sm text-white px-1.5 py-0.5 rounded z-10">
+                      {item.isDocument ? "PAGE 1" : "FRONT"}
+                    </span>
+                    {item.idCardUrl.startsWith("data:application/pdf") ? (
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-slate-400">
+                        <FileText className="w-7 h-7 opacity-60 mb-1" />
+                        <span className="text-[10px] font-bold tracking-wider">PDF</span>
+                      </div>
+                    ) : (
+                      <img
+                        src={item.idCardUrl}
+                        alt={item.isDocument ? "Document Page 1" : "ID Front"}
+                        className={`w-full h-full ${item.isDocument ? "object-contain" : "object-cover"} group-hover:scale-105 transition duration-300`}
+                      />
+                    )}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center z-20">
+                      <span className="text-white text-xs font-semibold flex items-center gap-1 bg-white/20 backdrop-blur-md px-2.5 py-1 rounded-md">
+                        <Eye className="w-3.5 h-3.5" /> Inspect
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {item.idCardBackUrl && (
+                  <div
+                    onClick={openModal}
+                    className="relative group flex-1 rounded-lg overflow-hidden border border-slate-200 bg-slate-900 aspect-video flex items-center justify-center cursor-pointer hover:border-slate-400 transition"
+                  >
+                    <span className="absolute top-1.5 left-1.5 text-[9px] font-bold uppercase tracking-wider bg-black/70 backdrop-blur-sm text-white px-1.5 py-0.5 rounded z-10">
+                      {item.isDocument ? "PAGE 2" : "BACK"}
+                    </span>
+                    {item.idCardBackUrl.startsWith("data:application/pdf") ? (
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-slate-400">
+                        <FileText className="w-7 h-7 opacity-60 mb-1" />
+                        <span className="text-[10px] font-bold tracking-wider">PDF</span>
+                      </div>
+                    ) : (
+                      <img
+                        src={item.idCardBackUrl}
+                        alt={item.isDocument ? "Document Page 2" : "ID Back"}
+                        className={`w-full h-full ${item.isDocument ? "object-contain" : "object-cover"} group-hover:scale-105 transition duration-300`}
+                      />
+                    )}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center z-20">
+                      <span className="text-white text-xs font-semibold flex items-center gap-1 bg-white/20 backdrop-blur-md px-2.5 py-1 rounded-md">
+                        <Eye className="w-3.5 h-3.5" /> Inspect
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Rejection notice if present */}
+          {item.idRejectionReason && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-800 flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <strong className="font-semibold">Rejected:</strong> {item.idRejectionReason}
+              </div>
+            </div>
+          )}
+
+          {/* Footer Action buttons */}
+          <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={openModal}
+              className="flex-1 gap-1.5 text-slate-700 text-xs h-8 border-slate-200 hover:bg-slate-50 font-medium"
+            >
+              <Eye className="w-3.5 h-3.5 text-slate-500" /> Inspect
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={() => handleApprove(item.id, item.recordType)}
+              disabled={updating === item.id || item.idStatus !== "PENDING"}
+              className="flex-1 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 font-medium shadow-none"
+            >
+              {updating === item.id ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="w-3.5 h-3.5" />
+              )}
+              Approve
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                setRejectModalTarget({
+                  id: item.id,
+                  type: item.recordType,
+                  name: item.name,
+                })
+              }
+              disabled={updating === item.id || item.idStatus !== "PENDING"}
+              className="gap-1 text-xs px-2.5 h-8 border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800 font-medium"
+            >
+              <XCircle className="w-3.5 h-3.5" /> Reject
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <div className="space-y-5">
@@ -661,59 +867,375 @@ export function IdVerificationPortal() {
         </div>
       )}
 
-      {/* View Full ID Modal */}
+      {/* View Full ID / Document Inspector Modal */}
       {viewImageModal && (
-        <Dialog open={!!viewImageModal} onOpenChange={() => setViewImageModal(null)}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-lg">
-                <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                {viewImageModal.isDocument ? "Proof of Relationship" : "ID Verification Photo"} — {viewImageModal.name}
-              </DialogTitle>
-              <DialogDescription>
-                Document Type: <strong>{viewImageModal.type}</strong>{" "}
-                {viewImageModal.idNumber ? `| Serial: ${viewImageModal.idNumber}` : ""}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className={`grid ${viewImageModal.backUrl ? "grid-cols-2" : "grid-cols-1"} gap-4 rounded-xl overflow-hidden border border-slate-300 bg-slate-950 p-4 min-h-[300px] items-center`}>
-              <div className="flex flex-col gap-2 items-center">
-                <span className="text-white text-xs font-bold tracking-wider bg-slate-800 px-3 py-1 rounded-full">
-                  {viewImageModal.isDocument ? "PAGE 1" : "FRONT"}
+        <Dialog
+          open={!!viewImageModal}
+          onOpenChange={(open) => {
+            if (!open) {
+              setViewImageModal(null);
+              setDocZoom(1);
+              setDocRotation(0);
+              setActiveDocPage("PAGE1");
+            }
+          }}
+        >
+          <DialogContent className="max-w-5xl w-[calc(100vw-2rem)] sm:w-[94vw] max-h-[94vh] flex flex-col p-0 sm:p-0 gap-0 overflow-hidden rounded-2xl border-slate-200 shadow-2xl">
+            {/* Fixed Header */}
+            <div className="px-5 py-4 sm:px-6 border-b border-slate-100 shrink-0 bg-white pr-12">
+              <DialogTitle className="flex items-center gap-2 text-base sm:text-lg font-bold text-slate-900">
+                <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span className="truncate">
+                  {viewImageModal.isDocument ? "Proof of Relationship Verification" : "Government ID Verification"} — {viewImageModal.name}
                 </span>
-                {viewImageModal.url.startsWith("data:application/pdf") ? (
-                  <iframe src={viewImageModal.url} className="w-full h-[60vh] rounded border border-slate-700 bg-white" />
-                ) : (
-                  <img
-                    src={viewImageModal.url}
-                    alt={viewImageModal.isDocument ? "Full Document Page 1" : "Full ID Image Front"}
-                    className="max-h-[70vh] w-auto object-contain rounded border border-slate-700"
-                  />
-                )}
-              </div>
-              {viewImageModal.backUrl && (
-                <div className="flex flex-col gap-2 items-center">
-                  <span className="text-white text-xs font-bold tracking-wider bg-slate-800 px-3 py-1 rounded-full">
-                    {viewImageModal.isDocument ? "PAGE 2" : "BACK"}
-                  </span>
-                  {viewImageModal.backUrl.startsWith("data:application/pdf") ? (
-                    <iframe src={viewImageModal.backUrl} className="w-full h-[60vh] rounded border border-slate-700 bg-white" />
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-500 mt-0.5">
+                Reviewing document for clinical registration: <strong className="text-slate-800">{viewImageModal.type}</strong>
+                {viewImageModal.idNumber ? ` • Serial: ${viewImageModal.idNumber}` : ""}
+              </DialogDescription>
+            </div>
+
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-slate-50/50">
+              {/* Dossier Comparison Header */}
+              {viewImageModal.recordType === "SUBPROFILE" && viewImageModal.ownerDetails ? (
+                <div className="p-4 bg-white border border-slate-200/90 rounded-xl text-xs space-y-3 shadow-sm">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2 font-semibold text-slate-800">
+                      <UserCheck className="w-4 h-4 text-emerald-600" />
+                      <span>Cross-Check Dossier (Compare with Document Below)</span>
+                    </div>
+                    <span className="text-[11px] text-slate-500">
+                      Submitted: {viewImageModal.date ? new Date(viewImageModal.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "N/A"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    {/* Proxy Submitter */}
+                    <div className="bg-slate-50/80 p-3.5 rounded-lg border border-slate-200/80 space-y-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Submitter (Account Owner / Proxy)
+                      </span>
+                      <div>
+                        <p className="font-bold text-slate-900 text-sm">
+                          {viewImageModal.ownerDetails.fullName}
+                        </p>
+                        {viewImageModal.ownerDetails.fullName !== viewImageModal.ownerDetails.username && (
+                          <p className="text-[11px] text-slate-500">
+                            Account: @{viewImageModal.ownerDetails.username}
+                          </p>
+                        )}
+                      </div>
+                      <div className="space-y-1.5 text-slate-600 text-xs pt-1 border-t border-slate-200/60">
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span className="font-mono">{viewImageModal.ownerDetails.phone || "No phone provided"}</span>
+                        </div>
+                        <div className="flex items-start gap-2 min-w-0">
+                          <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                          <span className="break-all font-mono text-slate-700">{viewImageModal.ownerDetails.email || "No email provided"}</span>
+                        </div>
+                        {viewImageModal.ownerDetails.address && (
+                          <div className="flex items-start gap-2 text-slate-500">
+                            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                            <span>{viewImageModal.ownerDetails.address}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Dependent */}
+                    <div className="bg-slate-50/80 p-3.5 rounded-lg border border-slate-200/80 space-y-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Dependent (Patient to be registered)
+                      </span>
+                      <div>
+                        <p className="font-bold text-slate-900 text-sm">
+                          {viewImageModal.name}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <Badge className="bg-sky-50 text-sky-700 border-sky-200 text-[10px] font-semibold py-0 px-2 rounded-full shadow-none hover:bg-sky-50">
+                            {viewImageModal.relationship}
+                          </Badge>
+                          <span className="text-[11px] text-slate-500 font-medium">
+                            {formatAge(viewImageModal.birthday) ? `${formatAge(viewImageModal.birthday)} • ` : ""}
+                            {viewImageModal.gender || "Gender N/A"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5 text-slate-600 text-xs pt-1 border-t border-slate-200/60">
+                        <div>Document: <strong className="text-slate-800">{viewImageModal.type}</strong></div>
+                        {viewImageModal.birthday && (
+                          <div>
+                            Birth Date: <strong>{new Date(viewImageModal.birthday).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong>
+                          </div>
+                        )}
+                        {viewImageModal.idNumber && (
+                          <div>Serial / ID: <strong className="font-mono text-slate-800">{viewImageModal.idNumber}</strong></div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : viewImageModal.recordType === "PATIENT" && viewImageModal.ownerDetails ? (
+                <div className="p-3.5 bg-white border border-slate-200/90 rounded-xl text-xs space-y-2 shadow-sm">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                    <span className="font-semibold text-slate-800">Patient Account Information</span>
+                    <span className="text-[11px] text-slate-500">
+                      Registered: {viewImageModal.date ? new Date(viewImageModal.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "N/A"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-slate-600">
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="font-mono">{viewImageModal.ownerDetails.phone || "No phone"}</span>
+                    </div>
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                      <span className="break-all font-mono text-slate-700">{viewImageModal.ownerDetails.email || "No email"}</span>
+                    </div>
+                    {viewImageModal.ownerDetails.address && (
+                      <div className="flex items-center gap-2 text-slate-500">
+                        <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="truncate">{viewImageModal.ownerDetails.address}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Document Inspection Canvas */}
+              <div className="rounded-xl border border-slate-800 bg-slate-950 overflow-hidden flex flex-col shadow-xl">
+                {/* Inspection Toolbar */}
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-900 border-b border-slate-800 text-xs">
+                  {/* Page Navigation Tabs */}
+                  <div className="flex items-center gap-1.5">
+                    {viewImageModal.backUrl ? (
+                      <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => setActiveDocPage("PAGE1")}
+                          className={cn(
+                            "px-2.5 py-1 text-[11px] font-semibold rounded-md transition",
+                            activeDocPage === "PAGE1"
+                              ? "bg-sky-600 text-white shadow-sm"
+                              : "text-slate-400 hover:text-white hover:bg-slate-800/60"
+                          )}
+                        >
+                          {viewImageModal.isDocument ? "Page 1" : "Front Side"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveDocPage("PAGE2")}
+                          className={cn(
+                            "px-2.5 py-1 text-[11px] font-semibold rounded-md transition",
+                            activeDocPage === "PAGE2"
+                              ? "bg-sky-600 text-white shadow-sm"
+                              : "text-slate-400 hover:text-white hover:bg-slate-800/60"
+                          )}
+                        >
+                          {viewImageModal.isDocument ? "Page 2" : "Back Side"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveDocPage("SPLIT")}
+                          className={cn(
+                            "px-2.5 py-1 text-[11px] font-semibold rounded-md transition",
+                            activeDocPage === "SPLIT"
+                              ? "bg-sky-600 text-white shadow-sm"
+                              : "text-slate-400 hover:text-white hover:bg-slate-800/60"
+                          )}
+                        >
+                          Split View
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-white text-[11px] font-bold tracking-wider bg-slate-800 px-2.5 py-1 rounded-md border border-slate-700">
+                        {viewImageModal.isDocument ? "PAGE 1" : "FRONT"}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Zoom, Rotation, and Popout Controls */}
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setDocZoom((prev) => Math.max(0.5, Number((prev - 0.25).toFixed(2))))}
+                      title="Zoom Out"
+                      className="h-7 w-7 p-0 text-slate-300 hover:text-white hover:bg-slate-800"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5" />
+                    </Button>
+                    <span className="text-[11px] font-mono text-slate-300 px-1 select-none min-w-[42px] text-center">
+                      {Math.round(docZoom * 100)}%
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setDocZoom((prev) => Math.min(3, Number((prev + 0.25).toFixed(2))))}
+                      title="Zoom In"
+                      className="h-7 w-7 p-0 text-slate-300 hover:text-white hover:bg-slate-800"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setDocZoom(1);
+                        setDocRotation(0);
+                      }}
+                      title="Reset Zoom & Rotation"
+                      className="h-7 px-2 text-[11px] text-slate-300 hover:text-white hover:bg-slate-800 font-medium"
+                    >
+                      Reset
+                    </Button>
+                    <div className="h-4 w-px bg-slate-800 mx-0.5" />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setDocRotation((prev) => (prev + 90) % 360)}
+                      title="Rotate 90° Clockwise"
+                      className="h-7 w-7 p-0 text-slate-300 hover:text-white hover:bg-slate-800"
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        const targetUrl = activeDocPage === "PAGE2" && viewImageModal.backUrl ? viewImageModal.backUrl : viewImageModal.url;
+                        openRawDocument(targetUrl);
+                      }}
+                      title="Open Full Resolution Document in New Window"
+                      className="h-7 px-2 text-[11px] text-sky-400 hover:text-sky-300 hover:bg-slate-800 gap-1 font-medium"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Raw File</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Canvas Display */}
+                <div className="p-4 sm:p-6 overflow-auto max-h-[58vh] min-h-[360px] flex items-center justify-center bg-slate-950/90 relative">
+                  {activeDocPage === "SPLIT" && viewImageModal.backUrl ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                      {/* Page 1 */}
+                      <div className="flex flex-col items-center gap-2">
+                        <span className="text-[11px] font-semibold text-slate-400">
+                          {viewImageModal.isDocument ? "Page 1" : "Front Side"}
+                        </span>
+                        {viewImageModal.url.startsWith("data:application/pdf") ? (
+                          <iframe src={viewImageModal.url} className="w-full h-[50vh] rounded border border-slate-700 bg-white" title="Page 1 PDF" />
+                        ) : (
+                          <div className="overflow-hidden flex items-center justify-center w-full">
+                            <img
+                              src={viewImageModal.url}
+                              alt="Document Page 1"
+                              style={{
+                                transform: `scale(${docZoom}) rotate(${docRotation}deg)`,
+                                transformOrigin: "center center",
+                              }}
+                              className="max-h-[50vh] max-w-full w-auto h-auto object-contain transition-transform duration-150 shadow-2xl rounded border border-slate-800"
+                            />
+                          </div>
+                        )}
+                      </div>
+                      {/* Page 2 */}
+                      <div className="flex flex-col items-center gap-2">
+                        <span className="text-[11px] font-semibold text-slate-400">
+                          {viewImageModal.isDocument ? "Page 2" : "Back Side"}
+                        </span>
+                        {viewImageModal.backUrl.startsWith("data:application/pdf") ? (
+                          <iframe src={viewImageModal.backUrl} className="w-full h-[50vh] rounded border border-slate-700 bg-white" title="Page 2 PDF" />
+                        ) : (
+                          <div className="overflow-hidden flex items-center justify-center w-full">
+                            <img
+                              src={viewImageModal.backUrl}
+                              alt="Document Page 2"
+                              style={{
+                                transform: `scale(${docZoom}) rotate(${docRotation}deg)`,
+                                transformOrigin: "center center",
+                              }}
+                              className="max-h-[50vh] max-w-full w-auto h-auto object-contain transition-transform duration-150 shadow-2xl rounded border border-slate-800"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   ) : (
-                    <img
-                      src={viewImageModal.backUrl}
-                      alt={viewImageModal.isDocument ? "Full Document Page 2" : "Full ID Image Back"}
-                      className="max-h-[70vh] w-auto object-contain rounded border border-slate-700"
-                    />
+                    /* Single Page Display */
+                    (() => {
+                      const currentUrl = activeDocPage === "PAGE2" && viewImageModal.backUrl ? viewImageModal.backUrl : viewImageModal.url;
+                      return currentUrl.startsWith("data:application/pdf") ? (
+                        <iframe src={currentUrl} className="w-full h-[55vh] rounded-lg border border-slate-700 bg-white" title="Supporting Document PDF" />
+                      ) : (
+                        <div className="flex items-center justify-center w-full min-h-[320px]">
+                          <img
+                            src={currentUrl}
+                            alt="Supporting Document"
+                            style={{
+                              transform: `scale(${docZoom}) rotate(${docRotation}deg)`,
+                              transformOrigin: "center center",
+                            }}
+                            className="max-h-[52vh] max-w-full w-auto h-auto object-contain transition-transform duration-150 shadow-2xl rounded border border-slate-800 block mx-auto"
+                          />
+                        </div>
+                      );
+                    })()
                   )}
+                </div>
+              </div>
+            </div>
+
+            {/* Fixed Footer with Direct Actions */}
+            <div className="p-3.5 sm:px-6 sm:py-3.5 border-t border-slate-100 shrink-0 bg-white flex flex-col sm:flex-row items-center justify-between gap-3">
+              <Button variant="ghost" onClick={() => setViewImageModal(null)} className="text-slate-600 text-xs w-full sm:w-auto">
+                Close Inspector
+              </Button>
+              {viewImageModal.idStatus === "PENDING" && (
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const target = {
+                        id: viewImageModal.id,
+                        type: viewImageModal.recordType,
+                        name: viewImageModal.name,
+                      };
+                      setViewImageModal(null);
+                      setRejectModalTarget(target);
+                    }}
+                    className="text-rose-700 border-rose-200 hover:bg-rose-50 text-xs flex-1 sm:flex-initial"
+                  >
+                    <XCircle className="w-3.5 h-3.5 mr-1" /> Reject
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      await handleApprove(viewImageModal.id, viewImageModal.recordType);
+                      setViewImageModal(null);
+                    }}
+                    disabled={updating === viewImageModal.id}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs flex-1 sm:flex-initial shadow-none"
+                  >
+                    {updating === viewImageModal.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                    ) : (
+                      <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                    )}
+                    Approve Verification
+                  </Button>
                 </div>
               )}
             </div>
-
-            <DialogFooter>
-              <Button onClick={() => setViewImageModal(null)} className="w-full sm:w-auto">
-                Close Viewer
-              </Button>
-            </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
